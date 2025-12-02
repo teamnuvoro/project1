@@ -94,8 +94,8 @@ pull_from_github() {
         fi
     fi
     
-    # Try to pull
-    if git pull origin "$BRANCH" --no-rebase; then
+    # Try to pull with allow-unrelated-histories flag
+    if git pull origin "$BRANCH" --no-rebase --allow-unrelated-histories; then
         echo -e "${GREEN}✅ Successfully pulled from GitHub${NC}"
         
         # Restore stashed changes if any
@@ -105,9 +105,23 @@ pull_from_github() {
         fi
         return 0
     else
-        echo -e "${RED}❌ Pull failed. You may have merge conflicts.${NC}"
-        echo -e "${YELLOW}💡 Try: git status to see conflicts${NC}"
-        return 1
+        # If pull fails, try with allow-unrelated-histories
+        echo -e "${YELLOW}⚠️  First pull attempt failed, trying with --allow-unrelated-histories...${NC}"
+        if git pull origin "$BRANCH" --allow-unrelated-histories --no-rebase; then
+            echo -e "${GREEN}✅ Successfully pulled from GitHub${NC}"
+            
+            # Restore stashed changes if any
+            if git stash list | grep -q "Replit auto-stash"; then
+                echo -e "${YELLOW}📦 Restoring stashed changes...${NC}"
+                git stash pop || true
+            fi
+            return 0
+        else
+            echo -e "${RED}❌ Pull failed. You may have merge conflicts.${NC}"
+            echo -e "${YELLOW}💡 Try: git status to see conflicts${NC}"
+            echo -e "${YELLOW}💡 Or: git pull origin main --allow-unrelated-histories${NC}"
+            return 1
+        fi
     fi
 }
 
