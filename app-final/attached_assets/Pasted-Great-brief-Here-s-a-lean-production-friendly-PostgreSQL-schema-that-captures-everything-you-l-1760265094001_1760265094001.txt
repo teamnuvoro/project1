@@ -1,0 +1,217 @@
+Great brief. Here’s a lean, production-friendly **PostgreSQL** schema that captures everything you listed while removing duplication and keeping reads fast. It separates **event data** (sessions/messages/calls) from a **cached per-user summary** that you can refresh after each session.
+
+---
+
+## 0) Extensions (once)
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- UUIDs via gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS citext;      -- case-insensitive email
+```
+
+---
+
+## 1) Enums
+
+```sql
+CREATE TYPE message_role AS ENUM ('user', 'ai');
+CREATE TYPE message_tag  AS ENUM ('general', 'evaluation');
+CREATE TYPE session_type AS ENUM ('chat', 'call');
+CREATE TYPE gender AS ENUM ('male','female','non_binary','prefer_not_to_say');
+```
+
+---
+
+## 2) Users + Cached “latest” summary (updated after each session)
+
+> Keep the **raw** per-session summaries in `sessions`. Mirror the **latest** into `user_summary_latest` for quick reads.
+
+```sql
+CREATE TABLE users (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number   TEXT,
+  name           TEXT,
+  email          CITEXT,
+  gender         gender,
+  premium_user   BOOLEAN NOT NULL DEFAULT false,
+  registration_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+  locale         TEXT DEFAULT 'hi-IN',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON users (premium_user);
+CREATE INDEX ON users (registration_date);
+
+-- Cached latest “Know Your Type” (fast profile reads)
+CREATE TABLE user_summary_latest (
+  user_id                 UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  partner_type_one_liner  TEXT,
+  top_3_traits_you_value  TEXT[],   -- ['patience','humor','ambition']
+  what_you_might_work_on  TEXT[],   -- short bullets
+  next_time_focus         TEXT[],   -- retention hooks
+  love_language_guess     TEXT,
+  communication_fit       TEXT,
+  confidence_score        NUMERIC(4,2),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+---
+
+## 3) Sessions (chat or call) — holds the per-session summary
+
+```sql
+CREATE TABLE sessions (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type                   session_type NOT NULL DEFAULT 'chat',
+  started_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at               TIMESTAMPTZ,
+
+  -- Summary captured at end of session
+  partner_type_one_liner TEXT,
+  top_3_traits_you_value TEXT[],
+  what_you_might_work_on TEXT[],
+  next_time_focus        TEXT[],
+  love_language_guess    TEXT,
+  communication_fit      TEXT,
+  confidence_score       NUMERIC(4,2),
+
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON sessions (user_id, started_at);
+CREATE INDEX ON sessions (type, started_at);
+```
+
+---
+
+## 4) Messages (combines your “Message” + “Evaluation” tables)
+
+```sql
+CREATE TABLE messages (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        message_role NOT NULL,            -- 'user' | 'ai'
+  tag         message_tag  NOT NULL DEFAULT 'general', -- 'general' | 'evaluation'
+  text        TEXT NOT NULL,                    -- exact message
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON messages (session_id, created_at);
+CREATE INDEX ON messages (user_id, created_at);
+CREATE INDEX ON messages (tag);
+```
+
+> Map your four tags like this:
+> • User Sent – General → `role='user', tag='general'`
+> • AI Sent – General → `role='ai', tag='general'`
+> • AI Sent – For Evaluation → `role='ai', tag='evaluation'`
+> • User Sent – For Evaluation → `role='user', tag='evaluation'`
+
+---
+
+## 5) Calls (voice metadata + transcript)
+
+```sql
+CREATE TABLE calls (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id       UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  transcript       TEXT,
+  started_at       TIMESTAMPTZ NOT NULL,
+  ended_at         TIMESTAMPTZ NOT NULL,
+  duration_seconds INTEGER GENERATED ALWAYS AS (EXTRACT(EPOCH FROM (ended_at - started_at))) STORED
+);
+
+CREATE INDEX ON calls (user_id, started_at);
+CREATE INDEX ON calls (session_id);
+```
+
+---
+
+## 6) Keep `user_summary_latest` in sync (simple trigger)
+
+> When you write a session summary, upsert into the per-user cache.
+
+```sql
+CREATE OR REPLACE FUNCTION upsert_user_summary_latest()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.partner_type_one_liner IS NOT NULL THEN
+    INSERT INTO user_summary_latest (
+      user_id, partner_type_one_liner, top_3_traits_you_value,
+      what_you_might_work_on, next_time_focus, love_language_guess,
+      communication_fit, confidence_score, updated_at
+    )
+    VALUES (
+      NEW.user_id, NEW.partner_type_one_liner, NEW.top_3_traits_you_value,
+      NEW.what_you_might_work_on, NEW.next_time_focus, NEW.love_language_guess,
+      NEW.communication_fit, NEW.confidence_score, now()
+    )
+    ON CONFLICT (user_id) DO UPDATE
+    SET partner_type_one_liner = EXCLUDED.partner_type_one_liner,
+        top_3_traits_you_value = EXCLUDED.top_3_traits_you_value,
+        what_you_might_work_on = EXCLUDED.what_you_might_work_on,
+        next_time_focus        = EXCLUDED.next_time_focus,
+        love_language_guess    = EXCLUDED.love_language_guess,
+        communication_fit      = EXCLUDED.communication_fit,
+        confidence_score       = EXCLUDED.confidence_score,
+        updated_at             = now();
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_sessions_after_update ON sessions;
+CREATE TRIGGER trg_sessions_after_update
+AFTER INSERT OR UPDATE OF partner_type_one_liner, top_3_traits_you_value,
+                        what_you_might_work_on, next_time_focus,
+                        love_language_guess, communication_fit, confidence_score
+ON sessions
+FOR EACH ROW EXECUTE FUNCTION upsert_user_summary_latest();
+```
+
+---
+
+## 7) Example writes
+
+```sql
+-- New user
+INSERT INTO users (name, email, gender) VALUES ('Raj', 'raj@example.com', 'male') RETURNING id;
+
+-- Start a chat session
+INSERT INTO sessions (user_id, type) VALUES ($1, 'chat') RETURNING id;
+
+-- Messages
+INSERT INTO messages (session_id, user_id, role, tag, text)
+VALUES ($2, $1, 'ai', 'general', 'Namaste! Main Riya hoon, aapka naam kya hai?');
+
+INSERT INTO messages (session_id, user_id, role, tag, text)
+VALUES ($2, $1, 'user', 'general', 'Main Raj hoon');
+
+-- End session + write summary (trigger updates user_summary_latest)
+UPDATE sessions
+SET ended_at = now(),
+    partner_type_one_liner = 'Calm, affectionate, expressive',
+    top_3_traits_you_value = ARRAY['patience','humor','shared ambition'],
+    what_you_might_work_on = ARRAY['open up sooner','state needs gently'],
+    next_time_focus        = ARRAY['love languages','handling stress'],
+    love_language_guess    = 'quality time',
+    communication_fit      = 'likes expressive, caring talks',
+    confidence_score       = 0.74
+WHERE id = $2;
+```
+
+---
+
+## Why this is optimized
+
+* **No duplication**: your “Evaluation Table” folds into `messages.tag`.
+* **Fast profile reads**: `user_summary_latest` gives instant access to “Your Ideal Partner Vibe / Traits / Next focus” on the **User Info** page, while the **source of truth** remains every session row.
+* **Analytics-ready**: sessions and calls are cleanly linked; queries for D1/D7 retention, avg call length, “evaluation” message pull are straightforward.
+* **Safe growth**: UUIDs, `TIMESTAMPTZ`, indices on hot paths, and CASCADE deletes.
+
+If you tell me you’re on **Supabase**, I can turn this into migration files plus a couple of helper views (e.g., `v_user_last_session`, `v_user_message_counts`).

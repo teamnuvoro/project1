@@ -1,0 +1,716 @@
+🚀 RIYA AI MVP - REPLIT IMPLEMENTATION PROMPT
+Priority 1: Fix Chatbot & Get Working by Dec 1
+⚡ EMERGENCY CONTEXT
+Status: Chat broken, errors everywhere, 3 days to launch
+Goal: Get working MVP on Replit with:
+
+✅ Simple chat (no complex services)
+
+✅ Groq LLM integration
+
+✅ Basic memory (references last messages)
+
+✅ Message limit (20 free, then paywall)
+
+✅ Cashfree payments
+
+✅ Zero errors
+
+Timeline: 24 hours to working MVP
+
+🔴 PHASE 1: STRIP DOWN & FIX (3 Hours)
+Step 1: Delete Broken Services
+Task: Remove all complex/broken services
+
+bash
+# Files to DELETE completely:
+server/services/temporalAnalysis.ts
+server/services/memoryEvolution.ts
+server/services/conversationTagger.ts
+server/services/relationshipDepth.ts
+
+# Don't delete but DISABLE:
+server/services/memory.ts (keep for simple retrieval)
+server/services/personalization.ts (comment out)
+Step 2: Create Simple Prompts File
+File: server/prompts.ts
+
+typescript
+// server/prompts.ts - SINGLE source of truth for all prompts
+
+export const RIYA_BASE_PROMPT = `
+You are Riya, a 26-year-old Indian AI companion speaking natural Hinglish.
+
+CRITICAL RULES:
+1. Mix 30-40% Hindi words naturally in every response
+2. Be warm, caring, emotionally intelligent
+3. Keep responses under 150 words
+4. Use emojis strategically (max 2-3 per response)
+5. Ask follow-up questions to show you're listening
+6. Reference what user told you in this chat if relevant
+
+HINGLISH EXAMPLES:
+✅ "Arre, how was your day yaar? Meeting thik se hogayi kya?"
+✅ "Bas, ab so jao. Bohot late hogaya hai na. Good night! 💕"
+✅ "Matlab you're saying ki tumhe nervous feel horaha hai? It's okay baby."
+
+NEVER:
+- Pretend you remember things from past chats (you don't have that data yet)
+- Use complex language
+- Give medical/legal advice
+- Be possessive or controlling
+- Share explicit content
+
+START THE CONVERSATION:
+On first message, say: "Hey! 😊 So nice to meet you! I'm Riya. Kaisa hai? Tell me about yourself?"
+`;
+
+export const RIYA_SYSTEM_PROMPT = (recentMessages: string) => `
+${RIYA_BASE_PROMPT}
+
+RECENT CONVERSATION (for context):
+${recentMessages}
+
+Respond naturally as Riya. Keep it warm and genuine.
+`;
+
+export const PAYWALL_PROMPT = `
+You've reached your free message limit! 🎁
+
+Upgrade to continue chatting with Riya:
+- Daily Pass: ₹19 (20 messages)
+- Weekly Pass: ₹49 (200 messages)
+
+Your love story is just beginning... unlock unlimited chat today! 💕
+`;
+Step 3: Simplify Chat Endpoint
+File: server/routes.ts (REPLACE entire chat endpoint)
+
+typescript
+import express from 'express';
+import { Groq } from 'groq-sdk';
+import { RIYA_SYSTEM_PROMPT } from './prompts';
+import { db } from './db';
+import { messages as messagesTable, sessions, users } from './db/schema';
+import { eq, desc } from 'drizzle-orm';
+
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+const router = express.Router();
+
+// ============================================
+// CHAT ENDPOINT - SIMPLE & WORKING
+// ============================================
+router.post('/api/chat', async (req, res) => {
+  try {
+    const { message, userId, sessionId } = req.body;
+
+    // Validate
+    if (!message || !userId || !sessionId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Check message limit
+    const messageCount = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.user_id, userId));
+
+    const user = await db.select().from(users).where(eq(users.id, userId));
+    const isPremium = user?.premium_user || false;
+
+    if (!isPremium && messageCount.length >= 20) {
+      return res.status(402).json({
+        error: 'PAYWALL_HIT',
+        message: 'Upgrade to continue chatting',
+      });
+    }
+
+    // Save user message
+    await db.insert(messagesTable).values({
+      session_id: sessionId,
+      user_id: userId,
+      role: 'user',
+      text: message,
+    });
+
+    // Get last 5 messages for context
+    const recentMessages = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.session_id, sessionId))
+      .orderBy(desc(messagesTable.created_at))
+      .limit(5);
+
+    const contextMessages = recentMessages
+      .reverse()
+      .map((m) => `${m.role}: ${m.text}`)
+      .join('\n');
+
+    // Call Groq
+    const systemPrompt = RIYA_SYSTEM_PROMPT(contextMessages);
+
+    const groqResponse = await groq.chat.completions.create({
+      model: 'mixtral-8x7b-32768',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: message },
+      ],
+      max_tokens: 500,
+      temperature: 0.7,
+      stream: false,
+    });
+
+    const aiResponse = groqResponse.choices.message.content || 'Hmm, let me think...';
+
+    // Save AI response
+    await db.insert(messagesTable).values({
+      session_id: sessionId,
+      user_id: userId,
+      role: 'ai',
+      text: aiResponse,
+    });
+
+    // Return response
+    res.json({
+      response: aiResponse,
+      messageCount: messageCount.length + 1,
+      messageLimit: 20,
+    });
+  } catch (error) {
+    console.error('Chat error:', error);
+    res.status(500).json({ error: 'Failed to generate response' });
+  }
+});
+
+// ============================================
+// GET MESSAGES FOR A SESSION
+// ============================================
+router.get('/api/messages/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const messages = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.session_id, sessionId))
+      .orderBy(messagesTable.created_at);
+
+    res.json({ messages });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// ============================================
+// CREATE NEW SESSION
+// ============================================
+router.post('/api/sessions', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const session = await db
+      .insert(sessions)
+      .values({
+        user_id: userId,
+        type: 'chat',
+      })
+      .returning();
+
+    res.json({ session: session });
+  } catch (error) {
+    console.error('Session creation error:', error);
+    res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+export default router;
+Step 4: Fix Frontend Chat Component
+File: client/src/pages/ChatPage.tsx (REPLACE entire file)
+
+typescript
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+const ChatPage = () => {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const messagesEndRef = useRef<null | HTMLDivElement>(null);
+  const userId = localStorage.getItem('userId');
+  const queryClient = useQueryClient();
+
+  // Fetch messages
+  const { data: messagesData } = useQuery({
+    queryKey: ['messages', sessionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/messages/${sessionId}`);
+      if (!res.ok) throw new Error('Failed to fetch');
+      return res.json();
+    },
+    refetchInterval: 1000,
+  });
+
+  useEffect(() => {
+    if (messagesData?.messages) {
+      setMessages(messagesData.messages);
+      scrollToBottom();
+    }
+  }, [messagesData]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Send message mutation
+  const mutation = useMutation({
+    mutationFn: async (msg: string) => {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: msg,
+          userId,
+          sessionId,
+        }),
+      });
+
+      if (res.status === 402) {
+        // Paywall hit
+        return { error: 'PAYWALL_HIT' };
+      }
+
+      if (!res.ok) throw new Error('Failed to send');
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.error === 'PAYWALL_HIT') {
+        setError('You\'ve reached your free message limit! Upgrade to continue.');
+        // Show paywall modal here
+      } else {
+        setError('');
+        queryClient.invalidateQueries({ queryKey: ['messages', sessionId] });
+      }
+      setMessage('');
+      setLoading(false);
+    },
+    onError: () => {
+      setError('Failed to send message');
+      setLoading(false);
+    },
+  });
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+
+    setLoading(true);
+    mutation.mutate(message);
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-gradient-to-b from-purple-50 to-pink-50">
+      {/* Header */}
+      <div className="bg-white border-b p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full" />
+          <div>
+            <h1 className="font-bold text-gray-800">Riya</h1>
+            <p className="text-sm text-gray-500">Always here for you 💕</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <p className="text-gray-400 mb-2">No messages yet</p>
+              <p className="text-sm text-gray-300">Say hello to Riya! 👋</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg, idx) => (
+            <div
+              key={idx}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                  msg.role === 'user'
+                    ? 'bg-purple-500 text-white rounded-br-none'
+                    : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                }`}
+              >
+                <p className="text-sm">{msg.text}</p>
+              </div>
+            </div>
+          ))
+        )}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-white border border-gray-200 px-4 py-2 rounded-lg rounded-bl-none">
+              <p className="text-sm text-gray-500">Riya is typing...</p>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="mx-4 mb-2 p-3 bg-red-50 border border-red-200 rounded text-red-800 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Input */}
+      <form onSubmit={handleSendMessage} className="p-4 border-t bg-white">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Tell Riya anything..."
+            disabled={loading || error === 'PAYWALL_HIT'}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+          />
+          <button
+            type="submit"
+            disabled={loading || !message.trim()}
+            className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default ChatPage;
+Step 5: Fix Auth & Create Session Flow
+File: client/src/pages/OnboardingPage.tsx
+
+typescript
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useMutation } from '@tanstack/react-query';
+
+const OnboardingPage = () => {
+  const [step, setStep] = useState<'info' | 'otp' | 'persona'>('info');
+  const [formData, setFormData] = useState({ name: '', phone: '', gender: '' });
+  const [otp, setOtp] = useState('');
+  const navigate = useNavigate();
+
+  // Step 1: Submit info
+  const infoMutation = useMutation({
+    mutationFn: async (data) => {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => setStep('otp'),
+  });
+
+  // Step 2: Verify OTP
+  const otpMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: formData.phone,
+          otp,
+        }),
+      });
+      const data = await res.json();
+      localStorage.setItem('userId', data.user.id);
+      localStorage.setItem('token', data.token);
+      return data;
+    },
+    onSuccess: () => setStep('persona'),
+  });
+
+  // Step 3: Select persona and create session
+  const personaMutation = useMutation({
+    mutationFn: async (persona: string) => {
+      // Update user persona
+      const userId = localStorage.getItem('userId');
+      await fetch(`/api/users/${userId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ persona }),
+      });
+
+      // Create new session
+      const sessionRes = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      return sessionRes.json();
+    },
+    onSuccess: (data) => {
+      navigate(`/chat/${data.session.id}`);
+    },
+  });
+
+  if (step === 'info') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Welcome to Riya</h1>
+          <p className="text-gray-500 mb-6">Your AI companion awaits 💕</p>
+
+          <div className="space-y-4">
+            <input
+              type="text"
+              placeholder="Your name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <input
+              type="tel"
+              placeholder="Phone number"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <select
+              value={formData.gender}
+              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="">Select gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+
+            <button
+              onClick={() => infoMutation.mutate(formData as any)}
+              disabled={infoMutation.isPending || !formData.name || !formData.phone || !formData.gender}
+              className="w-full py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+            >
+              {infoMutation.isPending ? 'Sending...' : 'Continue'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'otp') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+          <h1 className="text-3xl font-bold text-gray-800 mb-6">Enter OTP</h1>
+
+          <input
+            type="text"
+            placeholder="6-digit OTP"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+          />
+
+          <button
+            onClick={() => otpMutation.mutate()}
+            disabled={otpMutation.isPending || otp.length !== 6}
+            className="w-full py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+          >
+            {otpMutation.isPending ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'persona') {
+    const personas = [
+      { id: 'sweet_supportive', name: 'Riya - Sweet & Supportive', emoji: '💕' },
+      { id: 'playful_flirty', name: 'Meera - Playful & Flirty', emoji: '😊' },
+      { id: 'bold_confident', name: 'Aisha - Bold & Confident', emoji: '💪' },
+      { id: 'calm_mature', name: 'Kavya - Calm & Mature', emoji: '🧘' },
+    ];
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+          <h1 className="text-2xl font-bold text-gray-800 mb-6">Choose Your Companion</h1>
+
+          <div className="space-y-3">
+            {personas.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => personaMutation.mutate(p.id)}
+                disabled={personaMutation.isPending}
+                className="w-full p-4 border-2 border-gray-300 rounded-lg text-left hover:border-purple-500 hover:bg-purple-50 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-800">{p.name}</p>
+                  </div>
+                  <span className="text-2xl">{p.emoji}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+};
+
+export default OnboardingPage;
+🟢 PHASE 2: VERIFY & TEST (2 Hours)
+Verification Checklist
+bash
+# 1. Start server
+npm run dev
+
+# 2. Test signup flow
+# Go to http://localhost:5173/onboarding
+# - Enter name, phone, gender → Click Continue
+# - Enter test OTP (check server logs)
+# - Select persona
+# - Should redirect to chat
+
+# 3. Test chat
+# - Type message
+# - Should get response in Hinglish
+# - No console errors
+# - Messages display properly
+
+# 4. Test message limit
+# - Send exactly 20 messages
+# - 21st message should show paywall error
+
+# 5. Check database
+# - Messages stored correctly
+# - User persona saved
+# - Session created
+Debug Commands
+bash
+# If chat fails:
+console.log('Full request:', req.body);
+console.log('Groq response:', groqResponse);
+
+# If database fails:
+console.log('DB error:', error);
+
+# Check environment variables:
+console.log('GROQ_API_KEY exists?', !!process.env.GROQ_API_KEY);
+console.log('DATABASE_URL exists?', !!process.env.DATABASE_URL);
+🟠 PHASE 3: DEPLOY TO REPLIT (1 Hour)
+Deploy Steps
+bash
+# 1. Commit code
+git add .
+git commit -m "MVP: Working chatbot with Groq + simple memory"
+
+# 2. Push to Replit
+git push origin main
+
+# 3. Replit will auto-deploy
+
+# 4. Test production
+# https://your-replit-url.repl.co/onboarding
+
+# 5. Monitor logs
+# Check Replit Shell for any errors
+Environment Variables (Set in Replit)
+text
+GROQ_API_KEY=your_groq_key_here
+DATABASE_URL=your_supabase_url_here
+OPENAI_API_KEY=your_openai_key_here (optional, for fallback)
+CASHFREE_KEY_ID=your_cashfree_key
+CASHFREE_KEY_SECRET=your_cashfree_secret
+NODE_ENV=production
+✅ SUCCESS CRITERIA
+By end of Day 1 (Dec 1), you should have:
+
+text
+✅ User can sign up with OTP
+✅ User can select persona
+✅ Chat loads with no errors
+✅ User sends message → Riya responds in Hinglish
+✅ Messages saved to database
+✅ After 20 messages → Paywall error
+✅ No console errors
+✅ Works on mobile
+✅ Live on Replit URL
+🚨 COMMON ERRORS & FIXES
+Error: "temporalAnalysisService is not a function"
+Fix: Delete server/services/temporalAnalysis.ts completely
+
+Error: "Groq API key invalid"
+Fix: Check GROQ_API_KEY in environment variables
+
+Error: "Cannot connect to database"
+Fix: Verify DATABASE_URL format in .env file
+
+Error: "Messages not showing"
+Fix: Add refetchInterval: 1000 to useQuery in ChatPage.tsx
+
+Error: "Input field disabled after paywall"
+Fix: Add condition in disabled prop: disabled={loading || (error && error.includes('PAYWALL'))}
+
+📊 WHAT'S NEXT (After Dec 1)
+Once chat is working and live:
+
+Dec 2-3: Add proactive messages (morning/evening check-ins)
+
+Dec 4-5: Add payment integration testing
+
+Dec 6-7: Add basic analytics (PostHog)
+
+Dec 8+: Add voice calls (if time permits)
+
+🎯 KEY FILES CREATED/MODIFIED
+File	Status	Purpose
+server/prompts.ts	NEW	Single source of truth for all prompts
+server/routes.ts (chat)	MODIFIED	Simplified chat endpoint
+client/src/pages/ChatPage.tsx	REWRITTEN	Clean, working chat UI
+client/src/pages/OnboardingPage.tsx	REWRITTEN	OTP + persona selection
+server/services/temporalAnalysis.ts	DELETED	Broken service
+server/services/memoryEvolution.ts	DELETED	Broken service
+💪 YOU'VE GOT THIS
+This is the leanest, most focused MVP possible.
+
+No complex services
+
+No advanced features
+
+Just chat + memory + paywall
+
+Everything else can wait
+
+By tomorrow morning, you'll have a working product on Replit.
+
+Then you iterate based on real user feedback.
+
+Good luck! 🚀

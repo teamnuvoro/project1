@@ -1,0 +1,127 @@
+Based on your requirement to use only Sarvam Chat API for voice call conversations, here's the revised implementation plan:
+
+Implementation Plan: Voice Call Conversation Loop (Sarvam-Only Version)
+Step 1: AI Response Generation During Call (Sarvam Chat API)
+What's needed:
+
+Modify the STT WebSocket message handler in server/routes.ts to trigger Sarvam AI response when receiving final transcripts
+Detect when Sarvam STT sends a "final" transcript using the is_final flag in the response
+Send the final transcript to Sarvam Chat API only using the existing chatCompletion() function from server/services/sarvam.ts
+Maintain conversation context by storing messages in the call session during the call
+Use Riya's system prompt adapted for Sarvam (may need temperature adjustment since Sarvam uses 0.3 default vs OpenAI's settings)
+Implementation details:
+
+Parse STT WebSocket messages to identify is_final: true transcripts
+Build conversation history from stored messages in the session
+Call Sarvam Chat API with:
+System prompt: Adapted version of RIYA_SYSTEM_PROMPT for Sarvam's model
+Conversation history: Previous user + AI messages
+New user transcript: The final STT text
+Model: sarvam-2b
+Temperature: 0.3 (Sarvam's default, good for consistent responses)
+Store both user transcript and AI response as messages in the session
+Step 2: TTS Message Flow (Config → Text → Flush)
+What's needed:
+
+Implement proper TTS message sending after receiving Sarvam AI response
+Follow Sarvam's 3-step TTS flow:
+Config (already sent on connection open ✅)
+Text - Send Sarvam AI response as text message
+Flush - Finalize to trigger audio generation
+Implementation details:
+
+After Sarvam Chat API generates response text, send to TTS WebSocket:
+{
+  "action": "speak",
+  "text": "<Sarvam AI response here>"
+}
+Then immediately send flush message:
+{
+  "action": "flush"
+}
+TTS will stream audio chunks back through WebSocket
+Client already handles audio playback ✅
+Step 3: Session Message Storage During Call
+What's needed:
+
+Store messages in real-time during the call (not just at the end)
+Use existing storage.createMessage() function
+Store both user transcripts (from STT) and Sarvam AI responses
+Implementation details:
+
+When final STT transcript received → create message with role: "user"
+When Sarvam AI response generated → create message with role: "ai"
+Both messages linked to the call sessionId
+This builds conversation history for context in subsequent turns with Sarvam
+Step 4: Transcript Accumulation & Summary (Sarvam-Only)
+What's needed:
+
+Accumulate all conversation turns during the call
+Pass complete transcript to generateCallSummary() when call ends
+generateCallSummary() already uses Sarvam Chat API ✅
+Optimization needed:
+
+Instead of sending full transcript as one string, retrieve messages from session:
+const messages = await storage.getSessionMessages(sessionId);
+const transcript = messages.map(m => `${m.role}: ${m.text}`).join('\n');
+Summary generation already uses Sarvam Chat API, so it's consistent with voice AI
+Step 5: WebSocket Message Type Handling
+What's needed:
+
+Differentiate between audio chunks and JSON messages in WebSocket handlers
+STT sends both audio acknowledgments and JSON transcript events
+TTS sends both audio chunks and completion events
+Implementation details:
+
+In STT handler: Check if message is JSON (transcript) or binary (audio acknowledgment)
+if (typeof data === 'string') {
+  const parsed = JSON.parse(data);
+  if (parsed.is_final) {
+    // Trigger Sarvam AI response
+  }
+}
+In TTS handler: Check if message is audio/binary (audio chunk) or JSON (completion event)
+Binary data gets forwarded to client for playback
+JSON completion events can be logged or used for UI updates
+Step 6: Error Handling & State Management
+What's needed:
+
+Handle WebSocket disconnections gracefully
+Prevent duplicate AI responses for same transcript
+Handle Sarvam API failures without breaking the call
+Implementation details:
+
+Track last processed transcript ID or text to avoid duplicates
+Add try-catch around Sarvam Chat API calls
+On error, optionally send error message to TTS or log and continue waiting for next transcript
+Ensure cleanup when either WebSocket closes unexpectedly
+Fallback responses if Sarvam API is temporarily unavailable
+Execution Order Summary (Sarvam-Only Flow):
+STT receives audio → Sends partial/final transcripts
+Detect final transcript → Extract text with is_final: true
+Send to Sarvam Chat API → Get response text using chatCompletion()
+Store messages → User message + Sarvam AI message in session
+Send to TTS → action: "speak" + Sarvam response text
+Send flush → action: "flush"
+TTS streams audio → Client plays Sarvam's voice response
+Repeat for each user utterance
+On call end → Generate summary from session messages using Sarvam Chat API
+Key Files to Modify:
+server/routes.ts - STT WebSocket handler (add Sarvam AI trigger + TTS send)
+server/routes.ts - TTS WebSocket handler (ensure proper message handling)
+server/routes.ts - POST /api/call/end (use session messages for Sarvam summary)
+server/openai.ts - Export RIYA_SYSTEM_PROMPT so it can be reused with Sarvam
+No client changes needed - Frontend already handles everything correctly
+Dependencies Already Available:
+✅ Sarvam Chat API integration (chatCompletion function)
+✅ Message storage functions (storage.createMessage)
+✅ Session retrieval (storage.getSessionMessages)
+✅ TTS/STT WebSocket infrastructure
+✅ Audio playback in client
+✅ Call summary generation with Sarvam (already implemented)
+Key Difference from Original Plan:
+Uses Sarvam Chat API exclusively instead of OpenAI during voice calls
+Maintains consistency: Sarvam STT → Sarvam Chat → Sarvam TTS (all Sarvam AI stack)
+Text chat can still use OpenAI/Replit AI, but voice calls are 100% Sarvam-powered
+No mixing of AI providers during the voice conversation flow
+This creates a fully Sarvam-powered voice experience while keeping your existing text chat infrastructure intact.

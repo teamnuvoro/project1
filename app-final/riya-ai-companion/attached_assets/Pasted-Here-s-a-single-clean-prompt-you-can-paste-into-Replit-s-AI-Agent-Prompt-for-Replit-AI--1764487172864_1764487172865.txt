@@ -1,0 +1,95 @@
+Here’s a single, clean prompt you can paste into Replit’s AI/Agent:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend web app.  
+Your goals now are:
+
+1. **Fix all current errors** in the codebase so the app builds and runs cleanly.  
+2. **Integrate the newly added Figma-based UI files from yesterday** into the existing app without breaking core logic.
+
+### Context
+
+- Stack: React/Next (or Vite+React) frontend + Node/Express (or Next API routes) backend, using Supabase/Postgres for DB and Groq for LLM.
+- There is already:
+  - Auth (OTP / login)
+  - Chat page with AI responses
+  - Sessions and messages tables in the DB
+- Recently:
+  - New Figma-exported React components / pages were added (yesterday) and are not fully wired.
+  - Several TypeScript/JS/React errors and import issues appeared after this.
+  - Some routes/components are duplicated (old UI vs new Figma UI).
+
+### What I want you to do (step-by-step)
+
+1. **Scan the entire repo for errors and warnings**
+   - Fix all TypeScript/JS errors.
+   - Fix React errors (invalid hooks usage, missing keys, bad props, etc.).
+   - Fix import path issues and missing exports.
+   - Remove or refactor dead/duplicate code that conflicts with the main flow.
+
+2. **Identify and integrate the new Figma UI**
+   - Find all components/pages that came from the Figma import (added yesterday).
+   - Replace the OLD UI for:
+     - Onboarding
+     - Persona selection
+     - Chat screen
+   - With the NEW Figma-based UI components, **without** breaking:
+     - Existing auth logic
+     - Existing API calls to the backend
+     - Existing routing (URLs should stay the same where possible)
+   - Ensure:
+     - The new UI still calls the same backend endpoints (e.g. `/api/chat`, `/api/sessions`, `/api/auth/...`).
+     - Props and state are wired correctly (no dummy data).
+
+3. **Keep the business logic, swap only the presentation**
+   - Do NOT change the database schema.
+   - Do NOT change the core chat logic (how messages are saved / responses fetched).
+   - Only adjust:
+     - Components
+     - Layout
+     - Styling
+     - Wiring of UI to existing functions.
+
+4. **Clean up routing and entry points**
+   - Ensure the main app flow is:
+     1. Onboarding / login
+     2. Persona selection
+     3. Chat screen
+   - Remove or comment out any unused old routes/pages that conflict with the new ones.
+   - Make sure the new Figma pages are the ones actually used in the navigation.
+
+5. **Verify environment usage**
+   - Ensure the code that calls Groq / Supabase / Cashfree uses environment variables correctly.
+   - No hard-coded test keys.
+   - No references to undefined `process.env` vars.
+
+6. **Run a full build & fix remaining issues**
+   - Make the app run with:
+     - `npm run dev` (no runtime errors in console)
+     - `npm run build` (no build-time errors)
+   - If you must make tradeoffs, prioritize:
+     - Working chat flow
+     - Clean, functional new UI
+     - No TypeScript/React errors
+
+7. **Document what you changed**
+   - At the end, output a short summary:
+     - Files touched
+     - Main fixes
+     - Which Figma components replaced which old components
+     - Any TODOs you left for me.
+
+### Important constraints
+
+- Do NOT remove or change the database schema.
+- Do NOT remove essential business logic in the chat, sessions, or auth.
+- Prefer refactoring over deleting when unsure.
+- Preserve the existing API contracts (frontend still calls the same endpoints with same payload shapes).
+
+Start by:
+1. Listing all current TypeScript/React/build errors you see.  
+2. Then fix them in the minimum number of clean, focused edits.  
+3. Then wire in the Figma UI components as described.

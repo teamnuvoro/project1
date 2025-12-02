@@ -4,6 +4,9 @@ import { setupVite, serveStatic, log } from "./vite";
 import { Server } from "http";
 import chatRoutes from "./routes/chat";
 import supabaseApiRoutes from "./routes/supabase-api";
+import callRoutes from "./routes/call";
+import summaryRoutes from "./routes/summary";
+import userSummaryRoutes from "./routes/user-summary";
 
 const app = express();
 
@@ -16,6 +19,15 @@ app.use(supabaseApiRoutes);
 
 // Chat routes (Groq AI)
 app.use(chatRoutes);
+
+// Call routes (Vapi voice calls)
+app.use(callRoutes);
+
+// Summary routes (relationship insights)
+app.use(summaryRoutes);
+
+// User summary routes (cumulative understanding)
+app.use("/api/user-summary", userSummaryRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

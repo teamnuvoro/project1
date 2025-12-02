@@ -1,0 +1,697 @@
+Here's a comprehensive prompt for Replit to build a complete OTP login system with Twilio and Supabase:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend chat app (Riya).
+
+### Goal: Build Complete OTP Login System with Twilio + Supabase
+
+**What I need:**
+1. Login page with name + phone number
+2. OTP verification via Twilio SMS
+3. User data stored in Supabase `users` table
+4. Full authentication flow
+5. Session management
+
+### What I need you to do (Priority order)
+
+1. **SET UP TWILIO SECRETS IN SUPABASE**
+   
+   Add Twilio credentials to Supabase Secrets:
+   
+   In Supabase dashboard → Settings → Secrets:
+   - `TWILIO_ACCOUNT_SID` = Your Twilio Account SID
+   - `TWILIO_AUTH_TOKEN` = Your Twilio Auth Token
+   - `TWILIO_PHONE_NUMBER` = Your Twilio phone number (e.g., +1234567890)
+   
+   These will be used by Edge Functions.
+
+2. **CREATE SUPABASE EDGE FUNCTION: `/functions/send-otp`**
+   
+   This function sends OTP via Twilio:
+   
+   ```typescript
+   // supabase/functions/send-otp/index.ts
+   
+   import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+   
+   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+   const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID")!;
+   const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN")!;
+   const twilioPhoneNumber = Deno.env.get("TWILIO_PHONE_NUMBER")!;
+   
+   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+   
+   serve(async (req) => {
+     try {
+       const { name, phone } = await req.json();
+   
+       // Validate input
+       if (!name || !phone) {
+         return new Response(
+           JSON.stringify({ error: "Name and phone are required" }),
+           { status: 400 }
+         );
+       }
+   
+       // Generate 6-digit OTP
+       const otp = Math.floor(100000 + Math.random() * 900000).toString();
+       const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+   
+       // Check if user exists
+       const { data: existingUser } = await supabase
+         .from("users")
+         .select("id")
+         .eq("phone", phone)
+         .single();
+   
+       if (!existingUser) {
+         // Create new user with OTP
+         const { data: newUser, error: createError } = await supabase
+           .from("users")
+           .insert({
+             name,
+             phone,
+             otp,
+             otp_expiry: otpExpiry,
+             otp_verified: false,
+           })
+           .select()
+           .single();
+   
+         if (createError) throw createError;
+       } else {
+         // Update existing user with new OTP
+         const { error: updateError } = await supabase
+           .from("users")
+           .update({
+             name,
+             otp,
+             otp_expiry: otpExpiry,
+             otp_verified: false,
+           })
+           .eq("phone", phone);
+   
+         if (updateError) throw updateError;
+       }
+   
+       // Send OTP via Twilio
+       const auth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+       const twilioResponse = await fetch(
+         `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
+         {
+           method: "POST",
+           headers: {
+             "Authorization": `Basic ${auth}`,
+             "Content-Type": "application/x-www-form-urlencoded",
+           },
+           body: new URLSearchParams({
+             From: twilioPhoneNumber,
+             To: phone,
+             Body: `Your Riya OTP is: ${otp}. Valid for 10 minutes.`,
+           }).toString(),
+         }
+       );
+   
+       if (!twilioResponse.ok) {
+         const twilioError = await twilioResponse.text();
+         throw new Error(`Twilio error: ${twilioError}`);
+       }
+   
+       return new Response(
+         JSON.stringify({
+           success: true,
+           message: "OTP sent successfully",
+           phone: phone,
+         }),
+         { headers: { "Content-Type": "application/json" } }
+       );
+     } catch (error) {
+       console.error("Send OTP error:", error);
+       return new Response(
+         JSON.stringify({ error: error.message }),
+         { status: 500 }
+       );
+     }
+   });
+   ```
+
+3. **CREATE SUPABASE EDGE FUNCTION: `/functions/verify-otp`**
+   
+   This function verifies OTP and creates session:
+   
+   ```typescript
+   // supabase/functions/verify-otp/index.ts
+   
+   import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+   
+   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+   
+   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+   
+   serve(async (req) => {
+     try {
+       const { phone, otp } = await req.json();
+   
+       if (!phone || !otp) {
+         return new Response(
+           JSON.stringify({ error: "Phone and OTP are required" }),
+           { status: 400 }
+         );
+       }
+   
+       // Find user
+       const { data: user, error: userError } = await supabase
+         .from("users")
+         .select("*")
+         .eq("phone", phone)
+         .single();
+   
+       if (userError || !user) {
+         return new Response(
+           JSON.stringify({ error: "User not found" }),
+           { status: 401 }
+         );
+       }
+   
+       // Check OTP
+       if (user.otp !== otp) {
+         return new Response(
+           JSON.stringify({ error: "Invalid OTP" }),
+           { status: 401 }
+         );
+       }
+   
+       // Check OTP expiry
+       if (new Date() > new Date(user.otp_expiry)) {
+         return new Response(
+           JSON.stringify({ error: "OTP expired" }),
+           { status: 401 }
+         );
+       }
+   
+       // Update user - mark as verified
+       const { error: updateError } = await supabase
+         .from("users")
+         .update({
+           otp_verified: true,
+           otp: null,
+           otp_expiry: null,
+           last_login: new Date().toISOString(),
+         })
+         .eq("id", user.id);
+   
+       if (updateError) throw updateError;
+   
+       // Create session in sessions table
+       const { data: session, error: sessionError } = await supabase
+         .from("sessions")
+         .insert({
+           user_id: user.id,
+           persona_id: null, // Will be set when user chooses persona
+           started_at: new Date().toISOString(),
+         })
+         .select()
+         .single();
+   
+       if (sessionError) throw sessionError;
+   
+       return new Response(
+         JSON.stringify({
+           success: true,
+           userId: user.id,
+           sessionId: session.id,
+           name: user.name,
+           phone: user.phone,
+           message: "Login successful",
+         }),
+         { headers: { "Content-Type": "application/json" } }
+       );
+     } catch (error) {
+       console.error("Verify OTP error:", error);
+       return new Response(
+         JSON.stringify({ error: error.message }),
+         { status: 500 }
+       );
+     }
+   });
+   ```
+
+4. **CREATE BACKEND ROUTES**
+   
+   Create new file: `server/routes/auth.ts`
+   
+   ```typescript
+   // server/routes/auth.ts
+   
+   import express from 'express';
+   import { supabase } from '../lib/supabase';
+   
+   export const authRouter = express.Router();
+   
+   // Send OTP
+   authRouter.post('/send-otp', async (req, res) => {
+     try {
+       const { name, phone } = req.body;
+   
+       if (!name || !phone) {
+         return res.status(400).json({ error: 'Name and phone are required' });
+       }
+   
+       // Validate phone format (basic check)
+       if (!/^\+?[1-9]\d{1,14}$/.test(phone)) {
+         return res.status(400).json({ error: 'Invalid phone number format' });
+       }
+   
+       // Call Supabase Edge Function
+       const { data, error } = await supabase.functions.invoke('send-otp', {
+         body: { name, phone },
+       });
+   
+       if (error) {
+         console.error('Send OTP error:', error);
+         return res.status(500).json({ error: error.message });
+       }
+   
+       res.json(data);
+     } catch (error) {
+       console.error('Auth error:', error);
+       res.status(500).json({ error: error.message });
+     }
+   });
+   
+   // Verify OTP
+   authRouter.post('/verify-otp', async (req, res) => {
+     try {
+       const { phone, otp } = req.body;
+   
+       if (!phone || !otp) {
+         return res.status(400).json({ error: 'Phone and OTP are required' });
+       }
+   
+       // Call Supabase Edge Function
+       const { data, error } = await supabase.functions.invoke('verify-otp', {
+         body: { phone, otp },
+       });
+   
+       if (error) {
+         console.error('Verify OTP error:', error);
+         return res.status(500).json({ error: error.message });
+       }
+   
+       // Set response
+       res.json(data);
+     } catch (error) {
+       console.error('Auth error:', error);
+       res.status(500).json({ error: error.message });
+     }
+   });
+   ```
+   
+   Register in main Express app:
+   ```typescript
+   // server/index.ts
+   
+   import { authRouter } from './routes/auth';
+   
+   app.use('/api/auth', authRouter);
+   ```
+
+5. **CREATE LOGIN PAGE COMPONENT**
+   
+   Create new file: `client/src/pages/LoginPage.tsx`
+   
+   ```typescript
+   // client/src/pages/LoginPage.tsx
+   
+   import { useState } from 'react';
+   import { useNavigate } from 'react-router-dom';
+   
+   export function LoginPage() {
+     const navigate = useNavigate();
+     const [step, setStep] = useState('details'); // 'details' or 'otp'
+     const [loading, setLoading] = useState(false);
+     const [error, setError] = useState(null);
+     const [formData, setFormData] = useState({ name: '', phone: '' });
+     const [otp, setOtp] = useState('');
+     const [phoneForOtp, setPhoneForOtp] = useState('');
+   
+     // Step 1: Send OTP
+     const handleSendOtp = async (e) => {
+       e.preventDefault();
+       setError(null);
+       setLoading(true);
+   
+       try {
+         if (!formData.name.trim()) {
+           throw new Error('Please enter your name');
+         }
+   
+         if (!formData.phone.trim()) {
+           throw new Error('Please enter your phone number');
+         }
+   
+         // Validate phone format (E.164 format)
+         if (!/^\+?[1-9]\d{1,14}$/.test(formData.phone)) {
+           throw new Error('Please enter a valid phone number (e.g., +91XXXXXXXXXX)');
+         }
+   
+         // Call send OTP API
+         const response = await fetch('/api/auth/send-otp', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify(formData),
+         });
+   
+         if (!response.ok) {
+           const errorData = await response.json();
+           throw new Error(errorData.error || 'Failed to send OTP');
+         }
+   
+         const data = await response.json();
+         setPhoneForOtp(formData.phone);
+         setStep('otp');
+   
+       } catch (err) {
+         setError(err.message);
+         console.error('Send OTP error:', err);
+       } finally {
+         setLoading(false);
+       }
+     };
+   
+     // Step 2: Verify OTP
+     const handleVerifyOtp = async (e) => {
+       e.preventDefault();
+       setError(null);
+       setLoading(true);
+   
+       try {
+         if (!otp.trim() || otp.length !== 6) {
+           throw new Error('Please enter a valid 6-digit OTP');
+         }
+   
+         // Call verify OTP API
+         const response = await fetch('/api/auth/verify-otp', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ phone: phoneForOtp, otp }),
+         });
+   
+         if (!response.ok) {
+           const errorData = await response.json();
+           throw new Error(errorData.error || 'Failed to verify OTP');
+         }
+   
+         const data = await response.json();
+   
+         // Save to localStorage
+         localStorage.setItem('userId', data.userId);
+         localStorage.setItem('sessionId', data.sessionId);
+         localStorage.setItem('userName', data.name);
+         localStorage.setItem('userPhone', data.phone);
+   
+         // Redirect to persona selection or chat
+         navigate('/personas');
+   
+       } catch (err) {
+         setError(err.message);
+         console.error('Verify OTP error:', err);
+       } finally {
+         setLoading(false);
+       }
+     };
+   
+     return (
+       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
+         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+           {/* Header */}
+           <div className="text-center mb-8">
+             <h1 className="text-4xl font-bold text-purple-600 mb-2">Riya</h1>
+             <p className="text-gray-600">Your AI Girlfriend</p>
+           </div>
+   
+           {/* Step 1: Enter Details */}
+           {step === 'details' && (
+             <form onSubmit={handleSendOtp} className="space-y-6">
+               <h2 className="text-2xl font-bold text-gray-900 mb-6">Let's Get Started</h2>
+   
+               {/* Name Input */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Your Name
+                 </label>
+                 <input
+                   type="text"
+                   placeholder="Enter your name"
+                   value={formData.name}
+                   onChange={(e) =>
+                     setFormData({ ...formData, name: e.target.value })
+                   }
+                   disabled={loading}
+                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+                 />
+               </div>
+   
+               {/* Phone Input */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Phone Number
+                 </label>
+                 <input
+                   type="tel"
+                   placeholder="+91XXXXXXXXXX"
+                   value={formData.phone}
+                   onChange={(e) =>
+                     setFormData({ ...formData, phone: e.target.value })
+                   }
+                   disabled={loading}
+                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+                 />
+                 <p className="text-xs text-gray-500 mt-1">Include country code (e.g., +91 for India)</p>
+               </div>
+   
+               {/* Error Message */}
+               {error && (
+                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                   <p className="text-red-700 text-sm">{error}</p>
+                 </div>
+               )}
+   
+               {/* Submit Button */}
+               <button
+                 type="submit"
+                 disabled={loading}
+                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 {loading ? 'Sending OTP...' : 'Send OTP'}
+               </button>
+             </form>
+           )}
+   
+           {/* Step 2: Verify OTP */}
+           {step === 'otp' && (
+             <form onSubmit={handleVerifyOtp} className="space-y-6">
+               <div>
+                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Verify OTP</h2>
+                 <p className="text-gray-600 text-sm">
+                   We sent a code to <span className="font-semibold">{phoneForOtp}</span>
+                 </p>
+               </div>
+   
+               {/* OTP Input */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Enter OTP
+                 </label>
+                 <input
+                   type="text"
+                   placeholder="000000"
+                   maxLength="6"
+                   value={otp}
+                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                   disabled={loading}
+                   className="w-full px-4 py-3 text-center text-2xl tracking-widest border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+                 />
+                 <p className="text-xs text-gray-500 mt-1">Check your SMS for the 6-digit code</p>
+               </div>
+   
+               {/* Error Message */}
+               {error && (
+                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                   <p className="text-red-700 text-sm">{error}</p>
+                 </div>
+               )}
+   
+               {/* Submit Button */}
+               <button
+                 type="submit"
+                 disabled={loading || otp.length !== 6}
+                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 {loading ? 'Verifying...' : 'Verify OTP'}
+               </button>
+   
+               {/* Back Button */}
+               <button
+                 type="button"
+                 onClick={() => {
+                   setStep('details');
+                   setOtp('');
+                   setError(null);
+                 }}
+                 disabled={loading}
+                 className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-lg transition disabled:opacity-50"
+               >
+                 Change Number
+               </button>
+             </form>
+           )}
+   
+           {/* Footer */}
+           <div className="text-center mt-8 pt-6 border-t border-gray-200">
+             <p className="text-xs text-gray-500">
+               By logging in, you agree to our Terms & Conditions
+             </p>
+           </div>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+6. **UPDATE SUPABASE USERS TABLE SCHEMA**
+   
+   Run this SQL in Supabase SQL Editor:
+   
+   ```sql
+   -- Update users table with all required fields
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT;
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS otp TEXT;
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expiry TIMESTAMP;
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_verified BOOLEAN DEFAULT false;
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now();
+   
+   -- Make sure phone is unique
+   ALTER TABLE users ADD CONSTRAINT unique_phone UNIQUE(phone);
+   
+   -- Create index for faster lookups
+   CREATE INDEX idx_users_phone ON users(phone);
+   CREATE INDEX idx_users_created_at ON users(created_at);
+   ```
+
+7. **UPDATE APP ROUTING**
+   
+   Add login page to routing:
+   
+   ```typescript
+   // client/src/App.tsx or router config
+   
+   import { LoginPage } from './pages/LoginPage';
+   import { ChatPage } from './pages/ChatPage';
+   import { PersonaPage } from './pages/PersonaPage';
+   import { SummaryPage } from './pages/SummaryPage';
+   
+   const router = [
+     { path: '/', component: LoginPage }, // Default route
+     { path: '/login', component: LoginPage },
+     { path: '/personas', component: PersonaPage }, // After login
+     { path: '/chat', component: ChatPage },
+     { path: '/summary', component: SummaryPage },
+   ];
+   ```
+
+8. **ADD LOGOUT FUNCTIONALITY**
+   
+   Add logout helper:
+   
+   ```typescript
+   // client/src/lib/auth.ts
+   
+   export function logout() {
+     localStorage.removeItem('userId');
+     localStorage.removeItem('sessionId');
+     localStorage.removeItem('userName');
+     localStorage.removeItem('userPhone');
+     window.location.href = '/login';
+   }
+   ```
+
+9. **PROTECT ROUTES**
+   
+   Add route guard:
+   
+   ```typescript
+   // client/src/components/ProtectedRoute.tsx
+   
+   import { Navigate } from 'react-router-dom';
+   
+   export function ProtectedRoute({ children }) {
+     const userId = localStorage.getItem('userId');
+   
+     if (!userId) {
+       return <Navigate to="/login" replace />;
+     }
+   
+     return children;
+   }
+   ```
+
+10. **TEST END-TO-END**
+    
+    ```
+    Step 1: Go to http://localhost:3000
+    - Should see login page with name + phone inputs ✅
+    
+    Step 2: Enter name and phone
+    - Example: Name = "John", Phone = "+91XXXXXXXXXX"
+    - Click "Send OTP"
+    - Should see OTP input page ✅
+    
+    Step 3: Check Supabase
+    - Go to users table
+    - Should see new user with OTP ✅
+    
+    Step 4: Check SMS/Twilio Logs
+    - Should receive SMS with OTP ✅
+    
+    Step 5: Enter OTP
+    - Enter the 6-digit code received
+    - Click "Verify OTP"
+    - Should redirect to /personas ✅
+    
+    Step 6: Verify in Supabase
+    - users table → otp_verified = true ✅
+    - sessions table → new session created ✅
+    
+    Step 7: Try logging in again with same phone
+    - Should send new OTP ✅
+    - Old OTP should not work ✅
+    ```
+
+### Final Checklist
+
+- [ ] Twilio secrets added to Supabase
+- [ ] Edge Functions created (send-otp, verify-otp)
+- [ ] Backend auth routes created (/api/auth/send-otp, /api/auth/verify-otp)
+- [ ] Login page component created
+- [ ] Users table schema updated
+- [ ] App routing updated
+- [ ] Login page displays correctly
+- [ ] OTP sends via Twilio SMS
+- [ ] OTP verification works
+- [ ] User data saved to Supabase
+- [ ] Session created on successful login
+- [ ] Redirect to personas page works
+- [ ] Protected routes working
+
+***
+
+**Start by: Add Twilio secrets to Supabase → Create Edge Functions → Create backend routes → Create login page → Test end-to-end.**

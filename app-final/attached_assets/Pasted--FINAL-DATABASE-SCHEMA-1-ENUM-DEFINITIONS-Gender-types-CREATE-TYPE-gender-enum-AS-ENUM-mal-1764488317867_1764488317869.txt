@@ -1,0 +1,348 @@
+
+✅ FINAL DATABASE SCHEMA 
+
+1. ENUM DEFINITIONS
+-- Gender types
+CREATE TYPE gender_enum AS ENUM ('male', 'female', 'other', 'prefer_not_to_say');
+
+-- Session types
+CREATE TYPE session_type_enum AS ENUM ('chat', 'call');
+
+-- Message roles
+CREATE TYPE message_role_enum AS ENUM ('user', 'ai');
+
+-- Message tags (future use)
+CREATE TYPE message_tag_enum AS ENUM ('general', 'evaluation');
+
+-- Plan types for subscription
+CREATE TYPE plan_type_enum AS ENUM ('daily', 'weekly');
+
+-- Payment status enum
+CREATE TYPE payment_status_enum AS ENUM ('pending', 'success', 'failed');
+
+-- Persona types
+CREATE TYPE persona_enum AS ENUM ('sweet_supportive', 'playful_flirty', 'bold_confident', 'calm_mature');
+
+
+2. USERS TABLE
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  phone_number TEXT,
+  gender gender_enum NOT NULL,
+  persona persona_enum NOT NULL DEFAULT 'sweet_supportive',  -- selected persona
+  persona_prompt JSONB,  -- dynamic prompt modifier stored here
+  premium_user BOOLEAN NOT NULL DEFAULT false,
+  registration_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  locale TEXT DEFAULT 'hi-IN',
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+Notes:
+persona = selected persona baseline
+
+
+persona_prompt = dynamically updated persona block (iteration after sessions)
+
+
+
+3. OTP LOGINS TABLE
+CREATE TABLE otp_logins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  otp TEXT NOT NULL,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  verified BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+
+4. SESSIONS TABLE (CHAT + CALL)
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  type session_type_enum NOT NULL DEFAULT 'chat',
+
+  started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  ended_at TIMESTAMP WITH TIME ZONE,
+
+  -- Summary fields captured at the END of each session
+  partner_type_one_liner TEXT,
+  top_3_traits_you_value TEXT[],
+  what_you_might_work_on TEXT[],
+  next_time_focus TEXT[],
+  love_language_guess TEXT,
+  communication_fit TEXT,
+  confidence_score NUMERIC(4, 2),
+
+  -- Persona evolution modifier snapshot for this session
+  persona_snapshot JSONB,
+
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+Notes:
+Every session contains its own summary + persona snapshot.
+
+
+Chat + Call both use this table.
+
+
+
+5. MESSAGES TABLE
+CREATE TABLE messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  role message_role_enum NOT NULL,
+  tag message_tag_enum NOT NULL DEFAULT 'general',
+
+  text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+Notes:
+Call messages also stored here (STT → text and AI → text).
+
+
+Full transcript = join by session_id in chronological order.
+
+
+
+6. CALLS TABLE (OPTIONAL — FOR METADATA)
+CREATE TABLE calls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  transcript TEXT,
+  started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  ended_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  duration_seconds INTEGER
+);
+
+
+7. USER SUMMARY LATEST TABLE
+CREATE TABLE user_summary_latest (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+
+  partner_type_one_liner TEXT,
+  top_3_traits_you_value TEXT[],
+  what_you_might_work_on TEXT[],
+  next_time_focus TEXT[],
+  love_language_guess TEXT,
+  communication_fit TEXT,
+  confidence_score NUMERIC(4, 2),
+
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+Notes:
+Always represents the merged summary across all sessions.
+
+
+Used to show Summary Tracker UI instantly.
+
+
+
+8. SUBSCRIPTIONS TABLE
+CREATE TABLE subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan_type plan_type_enum NOT NULL,   -- daily or weekly
+  amount NUMERIC(10, 2) NOT NULL,
+  start_date TIMESTAMP WITH TIME ZONE NOT NULL,
+  end_date TIMESTAMP WITH TIME ZONE NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+
+9. PAYMENTS TABLE
+CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subscription_id UUID REFERENCES subscriptions(id) ON DELETE CASCADE,
+
+  cashfree_order_id TEXT UNIQUE NOT NULL,
+  cashfree_payment_id TEXT,
+  amount NUMERIC(10, 2) NOT NULL,
+
+  status payment_status_enum NOT NULL DEFAULT 'pending',
+  plan_type plan_type_enum NOT NULL,
+
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+
+10. USAGE TABLE (OPTIONAL BUT RECOMMENDED FOR PAYWALL)
+CREATE TABLE usage_stats (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  total_messages INTEGER NOT NULL DEFAULT 0,
+  total_call_seconds INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+Notes:
+Makes it easy to check paywall triggers.
+
+
+Use triggers to auto-increment after each message/call.
+
+
+
+11. ENTITY RELATIONSHIPS (TEXT DIAGRAM)
+users (1) ───< (many) sessions
+users (1) ───< (many) messages
+users (1) ───< (many) calls
+users (1) ───< (many) subscriptions
+users (1) ───< (many) payments
+users (1) ───< (1) user_summary_latest
+users (1) ───< (1) usage_stats
+
+sessions (1) ───< (many) messages
+sessions (1) ───< (many) calls
+
+subscriptions (1) ───< (many) payments
+
+
+⭐ SPECIAL FIELDS TO HIGHLIGHT TO DEV TEAM
+persona_prompt (JSONB)
+Stores dynamically evolving persona rules.
+persona_snapshot (JSONB) in sessions
+Stores persona version used for that session (important for analytics).
+summary tables + confidence scores
+Used to increase confidence +5% to +10% per session.
+usage_stats
+Required for message-based and call-based paywall triggers.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+erDiagram
+
+    USERS ||--o{ SESSIONS : has
+    USERS ||--o{ MESSAGES : writes
+    USERS ||--o{ CALLS : makes
+    USERS ||--o{ SUBSCRIPTIONS : subscribes
+    USERS ||--o{ PAYMENTS : pays
+    USERS ||--|| USER_SUMMARY_LATEST : has
+    USERS ||--|| USAGE_STATS : tracks
+
+    SESSIONS ||--o{ MESSAGES : contains
+    SESSIONS ||--o{ CALLS : contains
+
+    SUBSCRIPTIONS ||--o{ PAYMENTS : includes
+
+    USERS {
+        uuid id PK
+        text name
+        text email
+        text phone_number
+        gender_enum gender
+        persona_enum persona
+        jsonb persona_prompt
+        boolean premium_user
+        timestamp registration_date
+    }
+
+    SESSIONS {
+        uuid id PK
+        uuid user_id FK
+        session_type_enum type
+        timestamp started_at
+        timestamp ended_at
+        text partner_type_one_liner
+        text[] top_3_traits_you_value
+        text[] what_you_might_work_on
+        text[] next_time_focus
+        text love_language_guess
+        text communication_fit
+        numeric confidence_score
+        jsonb persona_snapshot
+    }
+
+    MESSAGES {
+        uuid id PK
+        uuid session_id FK
+        uuid user_id FK
+        message_role_enum role
+        message_tag_enum tag
+        text text
+        timestamp created_at
+    }
+
+    CALLS {
+        uuid id PK
+        uuid session_id FK
+        uuid user_id FK
+        text transcript
+        timestamp started_at
+        timestamp ended_at
+        int duration_seconds
+    }
+
+    USER_SUMMARY_LATEST {
+        uuid user_id PK/FK
+        text partner_type_one_liner
+        text[] top_3_traits_you_value
+        text[] what_you_might_work_on
+        text[] next_time_focus
+        text love_language_guess
+        text communication_fit
+        numeric confidence_score
+    }
+
+    USAGE_STATS {
+        uuid user_id PK/FK
+        int total_messages
+        int total_call_seconds
+    }
+
+    SUBSCRIPTIONS {
+        uuid id PK
+        uuid user_id FK
+        plan_type_enum plan_type
+        numeric amount
+        timestamp start_date
+        timestamp end_date
+        boolean active
+    }
+
+    PAYMENTS {
+        uuid id PK
+        uuid user_id FK
+        uuid subscription_id FK
+        text cashfree_order_id
+        text cashfree_payment_id
+        numeric amount
+        payment_status_enum status
+        plan_type_enum plan_type
+    }
+
+

@@ -51,8 +51,8 @@ export default function ChatPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 1500,
-    staleTime: 0,
+    refetchInterval: false, // Disable auto-refetch to prevent message disappearing
+    staleTime: 30000, // Consider data fresh for 30 seconds
   });
 
   useEffect(() => {
@@ -67,7 +67,27 @@ export default function ChatPage() {
         )
       );
     }
-  }, [messages]);
+    
+    // Clear streaming message if we have a matching AI message in the list
+    if (streamingMessage && messages.length > 0) {
+      const streamingText = streamingMessage.trim().toLowerCase();
+      const hasMatchingMessage = messages.some(msg => {
+        if (msg.role !== 'ai') return false;
+        const msgText = (msg.content || msg.text || '').trim().toLowerCase();
+        // Check if messages match (allowing for small differences)
+        return msgText.length > 0 && (
+          msgText === streamingText ||
+          msgText.includes(streamingText.substring(0, Math.min(30, streamingText.length))) ||
+          streamingText.includes(msgText.substring(0, Math.min(30, msgText.length)))
+        );
+      });
+      
+      if (hasMatchingMessage) {
+        console.log('[Chat] Found matching message in list, clearing streaming message');
+        setStreamingMessage("");
+      }
+    }
+  }, [messages, streamingMessage]);
 
   interface UserUsage {
     messageCount: number;
@@ -190,7 +210,8 @@ export default function ChatPage() {
 
           if (done) {
             setIsTyping(false);
-            setStreamingMessage("");
+            // Keep streaming message visible until actual message appears
+            // It will be cleared when messages are refetched
             break;
           }
 
@@ -210,10 +231,33 @@ export default function ChatPage() {
 
                 if (data.done) {
                   setIsTyping(false);
-                  setStreamingMessage("");
-                  if (session?.id) {
-                    queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
+                  
+                  // If we have a full response in the done signal, keep it visible
+                  if (data.fullResponse && accumulatedMessage) {
+                    // Keep the streaming message visible - it will be replaced when fetched
+                    console.log('[Chat] Stream complete, keeping message visible');
                   }
+                  
+                  // Wait longer before invalidating to ensure message is saved to database
+                  if (session?.id) {
+                    setTimeout(() => {
+                      queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
+                      // Clear streaming message after a longer delay to ensure it's replaced
+                      setTimeout(() => {
+                        // Only clear if we still have the streaming message (message should be in list by now)
+                        setStreamingMessage(prev => {
+                          if (prev) {
+                            console.log('[Chat] Clearing streaming message after refetch');
+                          }
+                          return "";
+                        });
+                      }, 1000);
+                    }, 1000);
+                  } else {
+                    // No session - clear immediately
+                    setStreamingMessage("");
+                  }
+                  
                   queryClient.invalidateQueries({ queryKey: ["/api/user/usage"] });
                   return { success: true };
                 }
@@ -230,7 +274,15 @@ export default function ChatPage() {
         }
 
         if (session) {
-          queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
+          // Wait longer for the message to be saved to database
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
+            // Don't clear streaming message here - let the useEffect handle it
+            // when it detects the matching message in the list
+          }, 1500);
+        } else {
+          // No session - keep streaming message visible for a bit
+          setTimeout(() => setStreamingMessage(""), 2000);
         }
         queryClient.invalidateQueries({ queryKey: ["/api/user/usage"] });
         return { success: true };
@@ -310,30 +362,39 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full bg-white">
-      <ChatHeader 
-        sessionId={session?.id} 
-        voiceModeEnabled={voiceModeEnabled}
-        onVoiceModeToggle={() => setVoiceModeEnabled(!voiceModeEnabled)}
-        onPaymentClick={() => setPaywallOpen(true)}
-        userUsage={userUsage}
-      />
+    <div className="flex flex-col h-screen w-full max-w-full bg-white overflow-hidden">
+      {/* Fixed Header - Responsive */}
+      <div className="flex-shrink-0 w-full">
+        <ChatHeader 
+          sessionId={session?.id} 
+          voiceModeEnabled={voiceModeEnabled}
+          onVoiceModeToggle={() => setVoiceModeEnabled(!voiceModeEnabled)}
+          onPaymentClick={() => setPaywallOpen(true)}
+          userUsage={userUsage}
+        />
+      </div>
 
-      <ChatMessages 
-        messages={displayMessages as Message[]} 
-        isLoading={isMessagesLoading}
-        isMobile={isMobile}
-        isTyping={isTyping}
-      />
+      {/* Scrollable Messages Area - Flexible */}
+      <div className="flex-1 min-h-0 w-full overflow-hidden">
+        <ChatMessages 
+          messages={displayMessages as Message[]} 
+          isLoading={isMessagesLoading}
+          isMobile={isMobile}
+          isTyping={isTyping}
+        />
+      </div>
 
-      <ChatInput 
-        onSendMessage={handleSendMessage}
-        isLoading={sendMessageMutation.isPending || isTyping}
-        disabled={isLimitReached}
-        isMobile={isMobile}
-        quickReplies={messages.length <= 3 ? quickReplies : []}
-        failedMessage={failedMessage}
-      />
+      {/* Fixed Input - Responsive */}
+      <div className="flex-shrink-0 w-full">
+        <ChatInput 
+          onSendMessage={handleSendMessage}
+          isLoading={sendMessageMutation.isPending || isTyping}
+          disabled={isLimitReached}
+          isMobile={isMobile}
+          quickReplies={messages.length <= 3 ? quickReplies : []}
+          failedMessage={failedMessage}
+        />
+      </div>
 
       <PaywallSheet open={paywallOpen} onOpenChange={setPaywallOpen} />
     </div>

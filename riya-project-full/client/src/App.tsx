@@ -17,8 +17,6 @@ import SettingsPage from "@/pages/SettingsPage";
 import MemoriesPage from "@/pages/MemoriesPage";
 import GalleryPage from "@/pages/GalleryPage";
 import LandingPage from "@/pages/LandingPage";
-import OnboardingPage from "@/pages/OnboardingPage";
-import PersonalityCarouselPage from "@/pages/PersonalityCarouselPage";
 
 import SignupPage from "@/pages/SignupPage";
 import LoginPage from "@/pages/LoginPage";
@@ -46,10 +44,6 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
     return <Redirect to="/login" />;
   }
 
-  return <Component />;
-}
-
-function OnboardingRoute({ component: Component }: { component: () => JSX.Element }) {
   return <Component />;
 }
 
@@ -98,23 +92,17 @@ function Router() {
       <Route path="/">
         {() => {
           if (!isAuthenticated) return <LandingPage />;
-          // Check if user needs onboarding
+          // Skip persona selection - Riya is default
           if (user && !user.onboarding_complete) {
-            return <Redirect to="/personality-selection" />;
+            // Set default persona to Riya if not set
+            return <Redirect to="/chat" />;
           }
           return <Redirect to="/chat" />;
         }}
       </Route>
+      <Route path="/landingpage" component={LandingPage} />
       <Route path="/signup" component={SignupPage} />
       <Route path="/login" component={LoginPage} />
-
-      {/* Onboarding Flow - Full Screen, No Sidebar */}
-      <Route path="/onboarding">
-        {() => <OnboardingRoute component={OnboardingPage} />}
-      </Route>
-      <Route path="/personality-selection">
-        {() => <OnboardingRoute component={PersonalityCarouselPage} />}
-      </Route>
 
       {/* Main App Routes - With Sidebar */}
       <Route path="/chat">

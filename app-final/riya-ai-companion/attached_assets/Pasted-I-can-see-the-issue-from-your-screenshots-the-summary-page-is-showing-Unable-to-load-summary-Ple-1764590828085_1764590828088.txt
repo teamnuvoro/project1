@@ -1,0 +1,551 @@
+I can see the issue from your screenshots - the summary page is showing "Unable to load summary. Please try again." and the chat history is empty. Here's a comprehensive prompt to fix both issues:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend chat app (Riya).
+
+### CRITICAL ISSUE: Summary Page Not Loading + Chat History Empty
+
+**Current state:**
+- Summary page shows: "Unable to load summary. Please try again." ❌
+- Chat history is empty ❌
+- Chat works but data not persisting ❌
+- No connection between chat and database ❌
+
+**What I need:**
+1. Fix summary page data loading
+2. Fix chat history display
+3. Connect chat to Supabase properly
+4. Make both pages display real data
+
+### What I need you to do (Priority order)
+
+1. **DEBUG SUMMARY PAGE ERROR**
+   
+   The summary page is failing. Steps:
+   
+   a) Check browser console (F12) for errors:
+      - Are there network errors? (red errors in Network tab)
+      - Are there JavaScript errors? (Console tab)
+      - Is `/api/summary` being called? (Network tab)
+   
+   b) Check backend logs (Replit console):
+      - Run: `npm run dev` in Replit
+      - Look for errors in the output
+      - Check if `/api/summary` route exists
+   
+   c) Verify Supabase connection:
+      - Check if `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set
+      - Test with curl: `curl -X POST http://localhost:3000/api/summary -H "Content-Type: application/json" -d '{"userId": "test"}'`
+   
+   d) Fix the `/api/summary` route if missing:
+   ```typescript
+   // server/routes/summary.ts
+   
+   import express from 'express';
+   import { supabase } from '../lib/supabase';
+   
+   export const summaryRouter = express.Router();
+   
+   summaryRouter.post('/', async (req, res) => {
+     try {
+       const { userId } = req.body;
+   
+       if (!userId) {
+         return res.status(400).json({ error: 'Missing userId' });
+       }
+   
+       // Fetch sessions
+       const { data: sessions, error: sessionsError } = await supabase
+         .from('sessions')
+         .select('*')
+         .eq('user_id', userId)
+         .order('started_at', { ascending: false });
+   
+       if (sessionsError) throw sessionsError;
+   
+       // Fetch messages
+       const { data: messages, error: messagesError } = await supabase
+         .from('messages')
+         .select('*')
+         .in('session_id', sessions?.map(s => s.id) || [])
+         .order('created_at', { ascending: false });
+   
+       if (messagesError) throw messagesError;
+   
+       // Fetch stats
+       const { data: stats, error: statsError } = await supabase
+         .from('chat_stats')
+         .select('*')
+         .eq('user_id', userId);
+   
+       if (statsError) throw statsError;
+   
+       // Calculate aggregates
+       const totalMessages = messages?.length || 0;
+       const totalSessions = sessions?.length || 0;
+       const avgResponseTime = stats?.length > 0
+         ? Math.round(stats.reduce((sum, s) => sum + (s.avg_response_time_ms || 0), 0) / stats.length)
+         : 0;
+   
+       res.json({
+         sessions: sessions || [],
+         messages: messages || [],
+         stats: stats || [],
+         aggregates: {
+           totalMessages,
+           totalSessions,
+           avgResponseTime,
+           lastSessionTime: sessions?.[0]?.started_at || null,
+         }
+       });
+     } catch (error) {
+       console.error('Summary error:', error);
+       res.status(500).json({ error: error.message });
+     }
+   });
+   ```
+   
+   e) Register route in main Express app:
+   ```typescript
+   // server/index.ts
+   
+   import { summaryRouter } from './routes/summary';
+   
+   app.use('/api/summary', summaryRouter);
+   ```
+
+2. **FIX CHAT HISTORY NOT SHOWING**
+   
+   Add data fetching to chat component:
+   
+   ```typescript
+   // client/src/pages/ChatPage.tsx
+   
+   import { useEffect, useState } from 'react';
+   import { supabase } from '../lib/supabase';
+   
+   export function ChatPage() {
+     const [messages, setMessages] = useState([]);
+     const [isLoading, setIsLoading] = useState(true);
+     const sessionId = localStorage.getItem('sessionId');
+     const userId = localStorage.getItem('userId');
+   
+     // Fetch messages on page load
+     useEffect(() => {
+       const fetchMessages = async () => {
+         try {
+           setIsLoading(true);
+   
+           if (!sessionId) {
+             console.error('No session ID found');
+             setIsLoading(false);
+             return;
+           }
+   
+           const { data, error } = await supabase
+             .from('messages')
+             .select('*')
+             .eq('session_id', sessionId)
+             .order('created_at', { ascending: true });
+   
+           if (error) {
+             console.error('Failed to fetch messages:', error);
+             setMessages([]);
+             return;
+           }
+   
+           setMessages(data || []);
+           console.log('✅ Loaded messages:', data?.length || 0);
+   
+         } catch (error) {
+           console.error('Error fetching messages:', error);
+           setMessages([]);
+         } finally {
+           setIsLoading(false);
+         }
+       };
+   
+       fetchMessages();
+   
+       // Set up real-time subscription
+       const subscription = supabase
+         .from(`messages:session_id=eq.${sessionId}`)
+         .on('*', payload => {
+           console.log('New message received:', payload);
+           setMessages(prev => [...prev, payload.new]);
+         })
+         .subscribe();
+   
+       return () => {
+         subscription.unsubscribe();
+       };
+     }, [sessionId]);
+   
+     // Handle send message
+     const handleSendMessage = async (messageText: string) => {
+       if (!messageText.trim() || !sessionId || !userId) return;
+   
+       try {
+         setIsLoading(true);
+   
+         // 1. Save user message to Supabase
+         const { data: userMsg, error: userError } = await supabase
+           .from('messages')
+           .insert({
+             session_id: sessionId,
+             role: 'user',
+             content: messageText,
+             created_at: new Date().toISOString(),
+           })
+           .select()
+           .single();
+   
+         if (userError) throw userError;
+   
+         // Add to UI immediately
+         setMessages(prev => [...prev, userMsg]);
+   
+         // 2. Call chat API
+         const response = await fetch('/api/chat', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ 
+             message: messageText, 
+             sessionId,
+             userId 
+           }),
+         });
+   
+         if (!response.ok) {
+           throw new Error(`Chat failed: ${response.status}`);
+         }
+   
+         const { response: aiResponse } = await response.json();
+   
+         // 3. Save AI response to Supabase
+         const { data: aiMsg, error: aiError } = await supabase
+           .from('messages')
+           .insert({
+             session_id: sessionId,
+             role: 'assistant',
+             content: aiResponse,
+             created_at: new Date().toISOString(),
+           })
+           .select()
+           .single();
+   
+         if (aiError) throw aiError;
+   
+         // Add AI response to UI
+         setMessages(prev => [...prev, aiMsg]);
+   
+       } catch (error) {
+         console.error('Send message error:', error);
+         alert('Failed to send message: ' + error.message);
+       } finally {
+         setIsLoading(false);
+       }
+     };
+   
+     return (
+       <div className="chat-container">
+         {isLoading && messages.length === 0 ? (
+           <div className="text-center p-8">Loading chat history...</div>
+         ) : (
+           <>
+             {/* Messages Display */}
+             <div className="messages-list mb-4">
+               {messages.length === 0 ? (
+                 <div className="text-center text-gray-500 py-8">
+                   No messages yet. Start a conversation!
+                 </div>
+               ) : (
+                 messages.map(msg => (
+                   <div
+                     key={msg.id}
+                     className={`message mb-3 p-3 rounded-lg ${
+                       msg.role === 'user'
+                         ? 'bg-blue-100 text-right ml-auto max-w-xs'
+                         : 'bg-gray-100 text-left mr-auto max-w-xs'
+                     }`}
+                   >
+                     {msg.content}
+                   </div>
+                 ))
+               )}
+             </div>
+   
+             {/* Input Form */}
+             <form
+               onSubmit={e => {
+                 e.preventDefault();
+                 const input = e.target.message;
+                 handleSendMessage(input.value);
+                 input.value = '';
+               }}
+               className="flex gap-2"
+             >
+               <input
+                 type="text"
+                 name="message"
+                 placeholder="Type your message..."
+                 disabled={isLoading}
+                 className="flex-1 p-2 border rounded"
+               />
+               <button
+                 type="submit"
+                 disabled={isLoading}
+                 className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+               >
+                 {isLoading ? 'Sending...' : 'Send'}
+               </button>
+             </form>
+           </>
+         )}
+       </div>
+     );
+   }
+   ```
+
+3. **FIX SUMMARY PAGE DISPLAY**
+   
+   Update summary page component:
+   
+   ```typescript
+   // client/src/pages/SummaryPage.tsx
+   
+   import { useQuery } from '@tanstack/react-query';
+   import { useState } from 'react';
+   
+   export function SummaryPage() {
+     const userId = localStorage.getItem('userId');
+     const [error, setError] = useState(null);
+   
+     const { data, isLoading, refetch } = useQuery({
+       queryKey: ['summary', userId],
+       queryFn: async () => {
+         try {
+           if (!userId) {
+             throw new Error('No user ID found');
+           }
+   
+           const response = await fetch('/api/summary', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ userId }),
+           });
+   
+           if (!response.ok) {
+             throw new Error(`Failed to load summary: ${response.status}`);
+           }
+   
+           const result = await response.json();
+           setError(null);
+           return result;
+   
+         } catch (err) {
+           setError(err.message);
+           console.error('Summary fetch error:', err);
+           throw err;
+         }
+       },
+       refetchInterval: 2000,
+       refetchIntervalInBackground: true,
+       retry: 3,
+       retryDelay: 1000,
+     });
+   
+     if (isLoading) {
+       return <div className="p-8 text-center">Loading summary...</div>;
+     }
+   
+     if (error) {
+       return (
+         <div className="p-8 text-center">
+           <p className="text-red-500 mb-4">Unable to load summary. {error}</p>
+           <button
+             onClick={() => refetch()}
+             className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+           >
+             Retry
+           </button>
+         </div>
+       );
+     }
+   
+     const { aggregates, sessions, messages } = data || {};
+   
+     return (
+       <div className="summary-dashboard p-8 max-w-6xl mx-auto">
+         {/* Stats Cards */}
+         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+           <StatCard
+             title="Total Messages"
+             value={aggregates?.totalMessages || 0}
+             icon="💬"
+           />
+           <StatCard
+             title="Total Sessions"
+             value={aggregates?.totalSessions || 0}
+             icon="🗣️"
+           />
+           <StatCard
+             title="Avg Response Time"
+             value={`${aggregates?.avgResponseTime || 0}ms`}
+             icon="⚡"
+           />
+           <StatCard
+             title="Last Chat"
+             value={formatTime(aggregates?.lastSessionTime)}
+             icon="🕐"
+           />
+         </div>
+   
+         {/* Sessions List */}
+         <div className="bg-white rounded-lg shadow p-6">
+           <h2 className="text-2xl font-bold mb-6">Conversation History</h2>
+           {sessions && sessions.length > 0 ? (
+             <div className="space-y-4">
+               {sessions.map(session => {
+                 const sessionMessages = messages?.filter(m => m.session_id === session.id) || [];
+                 return (
+                   <div key={session.id} className="border border-gray-200 rounded-lg p-4">
+                     <div className="flex justify-between items-start mb-3">
+                       <div>
+                         <h3 className="text-lg font-semibold">{session.persona_id} Chat</h3>
+                         <p className="text-sm text-gray-500">{formatDate(session.started_at)}</p>
+                       </div>
+                       <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                         {sessionMessages.length} messages
+                       </span>
+                     </div>
+                     
+                     <div className="bg-gray-50 rounded p-3 max-h-32 overflow-y-auto">
+                       {sessionMessages.length > 0 ? (
+                         sessionMessages.slice(0, 3).map(msg => (
+                           <div
+                             key={msg.id}
+                             className={`p-2 rounded text-sm mb-1 ${
+                               msg.role === 'user'
+                                 ? 'bg-blue-100 text-right'
+                                 : 'bg-gray-200'
+                             }`}
+                           >
+                             {msg.content.substring(0, 80)}...
+                           </div>
+                         ))
+                       ) : (
+                         <p className="text-gray-500 text-sm">No messages</p>
+                       )}
+                     </div>
+                   </div>
+                 );
+               })}
+             </div>
+           ) : (
+             <p className="text-gray-500">No conversations yet</p>
+           )}
+         </div>
+       </div>
+     );
+   }
+   
+   function StatCard({ title, value, icon }) {
+     return (
+       <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-6 border border-blue-200">
+         <div className="flex justify-between items-start mb-2">
+           <p className="text-gray-600 text-sm font-medium">{title}</p>
+           <span className="text-2xl">{icon}</span>
+         </div>
+         <p className="text-3xl font-bold text-gray-900">{value}</p>
+       </div>
+     );
+   }
+   
+   function formatDate(date) {
+     return new Date(date).toLocaleDateString('en-US', {
+       month: 'short',
+       day: 'numeric',
+       hour: '2-digit',
+       minute: '2-digit'
+     });
+   }
+   
+   function formatTime(date) {
+     if (!date) return 'Never';
+     const diff = Math.floor((new Date() - new Date(date)) / 1000);
+     if (diff < 60) return 'Just now';
+     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+     return `${Math.floor(diff / 86400)}d ago`;
+   }
+   ```
+
+4. **TEST END-TO-END**
+   
+   ```
+   Step 1: Go to Chat page
+   - Should show loading spinner
+   - Should load message history (if any)
+   
+   Step 2: Send a message "Hello"
+   - Message should appear immediately in chat
+   - Should see "Sending..." state
+   - AI response should appear in 1-2 seconds
+   
+   Step 3: Check Supabase console
+   - Go to messages table
+   - Should see 2 new rows (your message + AI response)
+   
+   Step 4: Go to Summary page
+   - Should show stats (Total Messages, Sessions, etc.)
+   - Should show conversation in history
+   - Should auto-refresh every 2 seconds
+   
+   Step 5: Send another message in Chat
+   - Go back to Summary page
+   - Stats should update automatically
+   - New message should appear in preview
+   
+   Step 6: Refresh page
+   - Chat history should still be visible
+   - Summary data should still be visible
+   ```
+
+5. **VERIFY SUPABASE TABLES HAVE DATA**
+   
+   Run in Supabase console:
+   ```sql
+   -- Check each table
+   SELECT COUNT(*) FROM users;
+   SELECT COUNT(*) FROM sessions;
+   SELECT COUNT(*) FROM messages;
+   SELECT COUNT(*) FROM chat_stats;
+   
+   -- See actual data
+   SELECT * FROM messages ORDER BY created_at DESC LIMIT 10;
+   SELECT * FROM sessions ORDER BY started_at DESC LIMIT 5;
+   ```
+
+### Final Checklist
+
+- [ ] `/api/summary` route exists and is registered
+- [ ] Summary page calls `/api/summary` with userId
+- [ ] Chat page fetches messages on load
+- [ ] Chat page saves messages to Supabase
+- [ ] Both pages show data correctly
+- [ ] No "Unable to load" errors
+- [ ] Chat history displays
+- [ ] Summary displays stats and sessions
+- [ ] Real-time updates work (new messages appear)
+- [ ] Page refresh preserves data
+
+***
+
+**Start by: Check browser console for errors → Check server logs → Add missing routes → Test chat → Test summary → Verify Supabase data.**
+
+[1](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/103234999/f768b8b3-b497-4ba6-90e3-d11fa24ded3c/image.jpg?AWSAccessKeyId=ASIA2F3EMEYE77RJW3WK&Signature=V9MYZYlLG1xz%2FiYnd6r9nGkbqXc%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEDQaCXVzLWVhc3QtMSJIMEYCIQDxpyQZam6E%2BhzfyL4GzfltPjUukK%2BKCJ0yDClkJewU1gIhAJ4tSBBNRGXk0tZ8fawWRzHIk2DsT52BANQFyu6iCVZUKvwECP3%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQARoMNjk5NzUzMzA5NzA1Igw7x6hfvfZx2KY%2Fzusq0ARIpsxe9eV%2FADUe6fJk58tAJ1CK0okNTciL3xyvknIeEWUrP5tdyh6ey19ZH1WBOqBvdW3i6pwB5cQKh9aP2%2F%2FEFCJHGfiZeVVVlewa8LItPCrkU5GLDIoVEPQY%2BHYFKzpDCvGiXWPRKYFbST%2BzueF%2FEP%2BqSX2kI1i2Tg68EkwnRL60iAu5zvGd3klzqb76MrGQ39O764NjoJ3CnKBkKRrjt%2FdqjEAkBeV1FmEimMVkXKoNqxxxykilgj%2F1u5iReSelfT0eUekSKu3uWqcppwRiOHjqLFkR%2BcMALhyc0heW2hD175PaQFt4QjGjh3jmolfG%2BfTKwmFNwBrjuP0vJ%2BAeiZgbg1xYW24lES0dr7FRK%2Fw4TSJgpBnlu1F1tLjxrOOonl2%2F1QVFi9T9Sr8l%2BKgUWGzQOK0I9ppbx8JVanbYI1rQsTMPCzIfFBp0BZowfkSUf%2FZeLiLrYEZNfxqy9GQfYwwSyYVfNnAfgImHCrN22NxTTxhBGA3w2H23FAQHt5F1HQyjMaZRcv7aEQPi8M5gc9x2xeqm1dJjavr%2F7SzS9JfvNl5rRA3bI80JmXvptaXvQLcMnQsQKClZAv9H68kqj4PSLkD%2BO%2BQWRrKAUFEkI%2BHOmD0WHFFiY1heAVyiuTitiXt53ML2QlhWZjkG4jqJfJZGsHAB07TXpHHlZa8364JdZVc5Yuc0WbBYP6ChZhdUJf8QRTDz16%2FTPByf3QIJTMq0nyUl6%2F2E3y8%2B%2BVLUAgkRVCwr4a2G4cg8yRwhpXAOoZfW7wAE3%2Fi0rntHFXO0MJ2EtskGOpcBHyZFtMlzGJh2bS2zaQD2zLBnn4BwLLpZEHQJCOlK8VpedXVzx%2FBrgUkyxFnsH1ObR%2F4SOYiQ0njxAISCzxCPlXmIWq5l0dj73j6Wt1Im1TnFa7H9BWNnEV%2FT7BEHP1aKV17q9%2BxcksAnI93B3inRqC0RFl78HeKWQO2oO3jqtzS1UFEb%2BLn3aPzA0nyvdXH9QLUXtcFB%2Bw%3D%3D&Expires=1764591389)
+[2](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/103234999/caa5e0c4-3e55-4a42-8646-585a918a5978/image.jpg?AWSAccessKeyId=ASIA2F3EMEYE77RJW3WK&Signature=Wkkmz%2FhSwR%2BspJlfLfKC%2FEnde2E%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEDQaCXVzLWVhc3QtMSJIMEYCIQDxpyQZam6E%2BhzfyL4GzfltPjUukK%2BKCJ0yDClkJewU1gIhAJ4tSBBNRGXk0tZ8fawWRzHIk2DsT52BANQFyu6iCVZUKvwECP3%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEQARoMNjk5NzUzMzA5NzA1Igw7x6hfvfZx2KY%2Fzusq0ARIpsxe9eV%2FADUe6fJk58tAJ1CK0okNTciL3xyvknIeEWUrP5tdyh6ey19ZH1WBOqBvdW3i6pwB5cQKh9aP2%2F%2FEFCJHGfiZeVVVlewa8LItPCrkU5GLDIoVEPQY%2BHYFKzpDCvGiXWPRKYFbST%2BzueF%2FEP%2BqSX2kI1i2Tg68EkwnRL60iAu5zvGd3klzqb76MrGQ39O764NjoJ3CnKBkKRrjt%2FdqjEAkBeV1FmEimMVkXKoNqxxxykilgj%2F1u5iReSelfT0eUekSKu3uWqcppwRiOHjqLFkR%2BcMALhyc0heW2hD175PaQFt4QjGjh3jmolfG%2BfTKwmFNwBrjuP0vJ%2BAeiZgbg1xYW24lES0dr7FRK%2Fw4TSJgpBnlu1F1tLjxrOOonl2%2F1QVFi9T9Sr8l%2BKgUWGzQOK0I9ppbx8JVanbYI1rQsTMPCzIfFBp0BZowfkSUf%2FZeLiLrYEZNfxqy9GQfYwwSyYVfNnAfgImHCrN22NxTTxhBGA3w2H23FAQHt5F1HQyjMaZRcv7aEQPi8M5gc9x2xeqm1dJjavr%2F7SzS9JfvNl5rRA3bI80JmXvptaXvQLcMnQsQKClZAv9H68kqj4PSLkD%2BO%2BQWRrKAUFEkI%2BHOmD0WHFFiY1heAVyiuTitiXt53ML2QlhWZjkG4jqJfJZGsHAB07TXpHHlZa8364JdZVc5Yuc0WbBYP6ChZhdUJf8QRTDz16%2FTPByf3QIJTMq0nyUl6%2F2E3y8%2B%2BVLUAgkRVCwr4a2G4cg8yRwhpXAOoZfW7wAE3%2Fi0rntHFXO0MJ2EtskGOpcBHyZFtMlzGJh2bS2zaQD2zLBnn4BwLLpZEHQJCOlK8VpedXVzx%2FBrgUkyxFnsH1ObR%2F4SOYiQ0njxAISCzxCPlXmIWq5l0dj73j6Wt1Im1TnFa7H9BWNnEV%2FT7BEHP1aKV17q9%2BxcksAnI93B3inRqC0RFl78HeKWQO2oO3jqtzS1UFEb%2BLn3aPzA0nyvdXH9QLUXtcFB%2Bw%3D%3D&Expires=1764591389)

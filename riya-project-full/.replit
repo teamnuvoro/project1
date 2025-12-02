@@ -1,47 +1,42 @@
-# Replit Configuration
-# This file helps Replit understand your project
+modules = ["nodejs-20"]
 
-# Run command when Replit starts
-run = "npm run dev"
-
-# Language
-language = "nodejs"
-
-# Entry point
-entrypoint = "server/index.ts"
-
-# Git integration
-[gitHubImport]
-requiredFiles = [".replit", "package.json"]
-
-# Nix environment
 [nix]
-channel = "stable-22.11"
+channel = "stable-25_05"
+packages = ["zip"]
 
-# Deploy configuration
-[deploy]
-publicDir = "dist/public"
-run = ["sh", "-c", "npm run build && npm run start"]
+[agent]
+expertMode = true
 
-# Unit tests
-[unitTest]
-language = "nodejs"
+[workflows]
+runButton = "Project"
 
-# LSP (Language Server Protocol)
-[languages.javascript]
-pattern = "**/*.{js,jsx,ts,tsx}"
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
 
-[languages.javascript.languageServer]
-start = "typescript-language-server --stdio"
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
 
-# Environment variables template
-[env]
-NODE_ENV = "development"
-PORT = "3000"
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
 
-# Git sync helper
-[gitSync]
-enabled = true
-autoPull = false
-autoPush = false
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["npm", "run", "start"]
+build = ["npm", "run", "build"]
 

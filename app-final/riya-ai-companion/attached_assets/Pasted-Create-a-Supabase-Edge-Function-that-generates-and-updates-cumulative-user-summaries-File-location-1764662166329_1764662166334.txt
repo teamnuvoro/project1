@@ -1,0 +1,54 @@
+Create a Supabase Edge Function that generates and updates cumulative user summaries.
+
+File location: supabase/functions/generate-user-summary/index.ts
+
+This function should:
+
+1. Accept input: { userId: string }
+
+2. Fetch all user data:
+   - SELECT all session_ids WHERE user_id = input.userId
+   - SELECT all messages WHERE session_id IN (session_ids)
+   - SELECT existing summary from user_cumulative_summary WHERE user_id = input.userId
+
+3. Prepare conversation history:
+   - Compile all messages into readable format
+   - Format: "User: [message], Rajjo: [response], User: [message], Rajjo: [response]..."
+   - Include timestamps
+
+4. Call Groq API:
+   - Use mixtral-8x7b-32768 model
+   - Include this system prompt:
+     "Analyze this cumulative conversation history and extract comprehensive insights about the user.
+      Return a JSON object with these exact fields: cumulative_summary, ideal_partner_type, 
+      user_personality_traits (array), communication_style, emotional_needs (array), values (array), 
+      interests (array), relationship_expectations, what_to_explore (array), 
+      suggested_conversation_starters (array), growth_areas (array), engagement_level, 
+      primary_conversation_theme, mood_pattern. Be specific and cite actual conversation content."
+   - Send conversation history as user message
+   - Parse JSON response
+
+5. Calculate understanding level:
+   - Use calculateUnderstandingLevel(sessionCount)
+   - sessionCount = number of sessions for this user
+
+6. Save/update to database:
+   - If summary exists: UPDATE user_cumulative_summary SET [all fields]
+   - If new user: INSERT INTO user_cumulative_summary VALUES [all fields]
+   - Always update: updated_at = now(), last_analysis_at = now()
+   - Set: total_sessions_count, total_messages_count from data
+
+7. Error handling:
+   - Catch Groq API errors and log them
+   - Return meaningful error messages
+   - Don't fail if summary generation fails
+
+8. Return response:
+   {
+     success: true,
+     summary: {all saved data},
+     message: "User summary generated successfully"
+   }
+
+Include all necessary imports and Supabase client setup.
+Make it production-ready with error handling and logging.

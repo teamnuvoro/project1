@@ -87,79 +87,79 @@ export default function AnalyticsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="gradient-header text-white px-4 py-4">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen w-full bg-white flex flex-col">
+      {/* Header - Responsive */}
+      <header className="gradient-header text-white px-3 sm:px-4 py-3 sm:py-4 w-full flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Link href="/chat">
-            <button className="p-2 hover:bg-white/10 rounded-full transition-colors" data-testid="button-back-to-chat">
-              <ArrowLeft className="w-5 h-5" />
+            <button className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition-colors flex-shrink-0" data-testid="button-back-to-chat">
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </Link>
-          <div>
-            <h1 className="font-semibold text-lg">Your Relationship Analysis</h1>
+          <div className="min-w-0">
+            <h1 className="font-semibold text-base sm:text-lg">Your Relationship Analysis</h1>
             <p className="text-sm text-white/80">Personalized insights by Riya</p>
           </div>
         </div>
       </header>
 
-      {/* Content */}
-      <div className="px-4 py-6 max-w-2xl mx-auto space-y-6">
-        {/* Greeting Card */}
+      {/* Content - Responsive Flexbox */}
+      <div className="flex-1 w-full px-3 sm:px-4 md:px-6 py-4 sm:py-6 max-w-2xl mx-auto space-y-4 sm:space-y-6 overflow-y-auto">
+        {/* Greeting Card - Responsive */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-5 border border-purple-100 shadow-sm"
+          className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-purple-100 shadow-sm w-full"
         >
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Sparkles className="w-5 h-5 text-purple-600" />
+          <div className="flex flex-col sm:flex-row items-start gap-3">
+            <div className="p-2 bg-purple-100 rounded-lg flex-shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />
             </div>
-            <div>
-              <h2 className="font-semibold text-lg text-foreground">
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold text-base sm:text-lg text-foreground">
                 Hello {user?.name || "User"}! 👋
               </h2>
-              <p className="text-muted-foreground text-sm leading-relaxed mt-1">
+              <p className="text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
                 Based on our conversations, I've analyzed your relationship style and identified your strengths. Let's explore what makes you unique in relationships.
               </p>
             </div>
           </div>
         </motion.div>
 
-        {/* Strengths Section */}
-        <div>
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+        {/* Strengths Section - Responsive */}
+        <div className="w-full">
+          <h2 className="text-base sm:text-lg font-semibold text-foreground mb-3 sm:mb-4">
             Your Relationship Strengths
           </h2>
 
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4 w-full">
             {strengthCards.map((card, index) => (
               <motion.div
                 key={card.title}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="insight-card-modern border-0 shadow-lg"
+                className="insight-card-modern border-0 shadow-lg w-full"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2.5 ${card.color} text-white rounded-xl shadow-md`}>
-                      {card.icon}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-3 sm:gap-4 mb-3 sm:mb-4">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                    <div className={`p-2 sm:p-2.5 ${card.color} text-white rounded-xl shadow-md flex-shrink-0`}>
+                      <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6">{card.icon}</div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground text-base">{card.title}</h3>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-foreground text-sm sm:text-base">{card.title}</h3>
                       <p className="text-xs text-muted-foreground mt-0.5">Your relationship strength</p>
                     </div>
                   </div>
-                  <div className="text-right bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl px-3 py-2 border border-purple-100">
-                    <span className="text-2xl font-bold text-foreground">{card.score}</span>
-                    <span className="text-sm text-muted-foreground">%</span>
+                  <div className="text-right bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl px-2 sm:px-3 py-1.5 sm:py-2 border border-purple-100 flex-shrink-0">
+                    <span className="text-xl sm:text-2xl font-bold text-foreground">{card.score}</span>
+                    <span className="text-xs sm:text-sm text-muted-foreground">%</span>
                   </div>
                 </div>
 
                 {/* Progress Bar */}
-                <div className="progress-bar mb-4">
+                <div className="progress-bar mb-3 sm:mb-4 w-full">
                   <motion.div
                     className="progress-bar-fill"
                     initial={{ width: 0 }}
@@ -168,12 +168,12 @@ export default function AnalyticsPage() {
                   />
                 </div>
 
-                {/* Traits */}
-                <div className="space-y-2.5 pt-2 border-t border-gray-100">
+                {/* Traits - Responsive */}
+                <div className="space-y-2 sm:space-y-2.5 pt-2 border-t border-gray-100">
                   {card.traits.map((trait, traitIndex) => (
-                    <div key={traitIndex} className="flex items-start gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-foreground leading-relaxed">{trait}</span>
+                    <div key={traitIndex} className="flex items-start gap-2 sm:gap-2.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-xs sm:text-sm text-foreground leading-relaxed break-words">{trait}</span>
                     </div>
                   ))}
                 </div>
@@ -182,15 +182,15 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Back to Chat Button */}
+        {/* Back to Chat Button - Responsive */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.5 }}
-          className="pt-4"
+          className="pt-4 sm:pt-6 pb-4 sm:pb-6 w-full"
         >
-          <Link href="/chat">
-            <button className="w-full py-4 gradient-primary-button text-white rounded-full font-medium shadow-lg shadow-purple-300/30">
+          <Link href="/chat" className="block w-full">
+            <button className="w-full py-3 sm:py-4 gradient-primary-button text-white rounded-full text-sm sm:text-base font-medium shadow-lg shadow-purple-300/30">
               Back to Chat with Riya
             </button>
           </Link>

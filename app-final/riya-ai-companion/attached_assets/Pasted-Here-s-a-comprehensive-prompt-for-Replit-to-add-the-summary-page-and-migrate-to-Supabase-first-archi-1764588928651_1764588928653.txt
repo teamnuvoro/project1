@@ -1,0 +1,417 @@
+Here's a comprehensive prompt for Replit to add the summary page and migrate to Supabase-first architecture:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend chat app (Riya).
+
+### Goal: Add Live Summary Dashboard + Migrate to Supabase-First Architecture
+
+**Current state:**
+- Chat works (with optimistic updates)
+- Messages saved to Supabase
+- Need: Live summary page that tracks all conversations
+
+**What I need:**
+1. Create a new "Summary" page with live-tracking dashboard
+2. Make Supabase the PRIMARY database (migrate all data there)
+3. All Edge Functions use Supabase for storage
+4. Summary page fetches real-time data from Supabase
+
+### What I need you to do (Priority order)
+
+1. **CREATE SUPABASE TABLES FOR SUMMARY DATA**
+   
+   Tables to create/verify in Supabase:
+   
+   ```sql
+   -- Users table (if not exists)
+   CREATE TABLE IF NOT EXISTS users (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     phone TEXT UNIQUE NOT NULL,
+     otp_verified BOOLEAN DEFAULT false,
+     created_at TIMESTAMP DEFAULT now()
+   );
+   
+   -- Sessions table
+   CREATE TABLE IF NOT EXISTS sessions (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id UUID REFERENCES users(id),
+     persona_id TEXT,
+     topic TEXT, -- Chat topic/summary
+     started_at TIMESTAMP DEFAULT now(),
+     ended_at TIMESTAMP,
+     message_count INTEGER DEFAULT 0
+   );
+   
+   -- Messages table
+   CREATE TABLE IF NOT EXISTS messages (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     session_id UUID REFERENCES sessions(id),
+     role TEXT CHECK (role IN ('user', 'assistant')),
+     content TEXT NOT NULL,
+     created_at TIMESTAMP DEFAULT now()
+   );
+   
+   -- Chat statistics table
+   CREATE TABLE IF NOT EXISTS chat_stats (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     user_id UUID REFERENCES users(id),
+     session_id UUID REFERENCES sessions(id),
+     total_messages INTEGER DEFAULT 0,
+     user_messages INTEGER DEFAULT 0,
+     bot_responses INTEGER DEFAULT 0,
+     avg_response_time_ms INTEGER DEFAULT 0,
+     sentiment TEXT, -- 'positive', 'neutral', 'negative'
+     topics TEXT[], -- Array of topics discussed
+     created_at TIMESTAMP DEFAULT now()
+   );
+   
+   -- Session summary table
+   CREATE TABLE IF NOT EXISTS session_summaries (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     session_id UUID REFERENCES sessions(id),
+     summary TEXT, -- AI-generated summary
+     key_points TEXT[], -- Array of key discussion points
+     user_satisfaction INTEGER, -- 1-5 rating
+     created_at TIMESTAMP DEFAULT now()
+   );
+   ```
+
+2. **CREATE SUPABASE EDGE FUNCTION: `/functions/get-summary-data`**
+   
+   This function powers the summary dashboard:
+   
+   ```typescript
+   // supabase/functions/get-summary-data/index.ts
+   
+   import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+   
+   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+   
+   serve(async (req) => {
+     try {
+       const { userId } = await req.json();
+   
+       // Fetch all sessions for user
+       const { data: sessions } = await supabase
+         .from("sessions")
+         .select("*")
+         .eq("user_id", userId)
+         .order("started_at", { ascending: false });
+   
+       // Fetch statistics
+       const { data: stats } = await supabase
+         .from("chat_stats")
+         .select("*")
+         .eq("user_id", userId);
+   
+       // Fetch summaries
+       const { data: summaries } = await supabase
+         .from("session_summaries")
+         .select("*")
+         .in("session_id", sessions?.map(s => s.id) || []);
+   
+       // Calculate aggregates
+       const totalMessages = stats?.reduce((sum, s) => sum + s.total_messages, 0) || 0;
+       const totalSessions = sessions?.length || 0;
+       const avgResponseTime = stats?.length > 0 
+         ? Math.round(stats.reduce((sum, s) => sum + (s.avg_response_time_ms || 0), 0) / stats.length)
+         : 0;
+   
+       return new Response(
+         JSON.stringify({
+           sessions,
+           stats,
+           summaries,
+           aggregates: {
+             totalMessages,
+             totalSessions,
+             avgResponseTime,
+             lastSessionTime: sessions?.[0]?.started_at || null,
+           }
+         }),
+         { headers: { "Content-Type": "application/json" } }
+       );
+     } catch (error) {
+       return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+     }
+   });
+   ```
+
+3. **UPDATE CHAT EDGE FUNCTION TO POPULATE SUMMARY TABLES**
+   
+   When chat happens, also update `chat_stats` and `session_summaries`:
+   
+   ```typescript
+   // In supabase/functions/chat/index.ts
+   // After saving message, also:
+   
+   // Update message count
+   await supabase
+     .from("chat_stats")
+     .update({ 
+       total_messages: total_messages + 1,
+       bot_responses: bot_responses + 1,
+       avg_response_time_ms: response_time_ms
+     })
+     .eq("session_id", sessionId);
+   
+   // Update session
+   await supabase
+     .from("sessions")
+     .update({ message_count: message_count + 1 })
+     .eq("id", sessionId);
+   ```
+
+4. **CREATE SUMMARY PAGE COMPONENT (React)**
+   
+   New file: `client/src/pages/SummaryPage.tsx`
+   
+   Features:
+   - Live-updating statistics dashboard
+   - Session list with live message counts
+   - Chat timeline visualization
+   - Key insights and trends
+   - Per-session summaries
+   - Real-time refetch (every 2 seconds)
+   
+   ```typescript
+   // client/src/pages/SummaryPage.tsx
+   
+   import { useQuery } from '@tanstack/react-query';
+   import { useEffect, useState } from 'react';
+   
+   export function SummaryPage() {
+     const userId = localStorage.getItem('userId');
+   
+     const { data, isLoading, refetch } = useQuery({
+       queryKey: ['summary-data', userId],
+       queryFn: async () => {
+         const response = await fetch('/api/summary', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ userId })
+         });
+         return response.json();
+       },
+       refetchInterval: 2000, // Refetch every 2 seconds for live updates
+       refetchIntervalInBackground: true,
+     });
+   
+     if (isLoading) return <div>Loading summary...</div>;
+   
+     return (
+       <div className="summary-dashboard">
+         {/* Stats Cards */}
+         <div className="stats-grid">
+           <StatCard 
+             title="Total Messages" 
+             value={data?.aggregates?.totalMessages} 
+           />
+           <StatCard 
+             title="Total Sessions" 
+             value={data?.aggregates?.totalSessions} 
+           />
+           <StatCard 
+             title="Avg Response Time" 
+             value={`${data?.aggregates?.avgResponseTime}ms`} 
+           />
+           <StatCard 
+             title="Last Chat" 
+             value={formatTime(data?.aggregates?.lastSessionTime)} 
+           />
+         </div>
+   
+         {/* Session List */}
+         <div className="sessions-list">
+           <h2>Conversation History</h2>
+           {data?.sessions?.map(session => (
+             <SessionCard 
+               key={session.id} 
+               session={session}
+               stats={data?.stats?.find(s => s.session_id === session.id)}
+               summary={data?.summaries?.find(s => s.session_id === session.id)}
+             />
+           ))}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+5. **CREATE BACKEND ROUTE: `/api/summary`**
+   
+   New file: `server/routes/summary.ts`
+   
+   ```typescript
+   // server/routes/summary.ts
+   
+   import express from 'express';
+   import { supabase } from '../lib/supabase';
+   
+   export const summaryRouter = express.Router();
+   
+   summaryRouter.post('/', async (req, res) => {
+     try {
+       const { userId } = req.body;
+   
+       // Call Supabase Edge Function
+       const { data, error } = await supabase.functions.invoke('get-summary-data', {
+         body: { userId }
+       });
+   
+       if (error) throw error;
+   
+       res.json(data);
+     } catch (error) {
+       console.error('Summary error:', error);
+       res.status(500).json({ error: 'Failed to fetch summary' });
+     }
+   });
+   ```
+
+6. **ADD SUMMARY PAGE TO ROUTING**
+   
+   Update frontend router to include summary page:
+   
+   ```typescript
+   // client/src/App.tsx or router config
+   
+   import { SummaryPage } from './pages/SummaryPage';
+   
+   routes: [
+     { path: '/chat', component: ChatPage },
+     { path: '/summary', component: SummaryPage }, // Add this
+     { path: '/onboarding', component: OnboardingPage },
+   ]
+   ```
+
+7. **MIGRATE ALL DATA STORAGE TO SUPABASE**
+   
+   Check for any data stored elsewhere:
+   
+   - ❌ Remove any localStorage data persistence (except user ID)
+   - ✅ Move all messages to `messages` table
+   - ✅ Move all sessions to `sessions` table
+   - ✅ Move all user data to `users` table
+   - ✅ Move all stats to `chat_stats` table
+   - Verify: All reads/writes go through Supabase client
+   
+   Backend changes:
+   ```typescript
+   // Everywhere you write data, use Supabase:
+   
+   const { data, error } = await supabase
+     .from('table_name')
+     .insert([{ column: value }]);
+   
+   // NOT: Save to file, database, or localStorage
+   ```
+
+8. **IMPLEMENT RLS POLICIES FOR SUMMARY PAGE**
+   
+   Users should only see their OWN summary data:
+   
+   ```sql
+   -- RLS policy for sessions
+   CREATE POLICY "Users can view their own sessions"
+     ON sessions
+     FOR SELECT
+     USING (auth.uid()::text = user_id::text);
+   
+   -- RLS policy for chat_stats
+   CREATE POLICY "Users can view their own stats"
+     ON chat_stats
+     FOR SELECT
+     USING (auth.uid()::text = user_id::text);
+   
+   -- RLS policy for session_summaries
+   CREATE POLICY "Users can view their own summaries"
+     ON session_summaries
+     FOR SELECT
+     USING (
+       session_id IN (
+         SELECT id FROM sessions WHERE user_id = auth.uid()
+       )
+     );
+   ```
+
+9. **ADD LIVE UPDATES WITH SUPABASE REALTIME**
+   
+   Make summary page truly real-time:
+   
+   ```typescript
+   // client/src/pages/SummaryPage.tsx
+   
+   useEffect(() => {
+     // Subscribe to message changes
+     const subscription = supabase
+       .from(`messages:session_id=eq.${sessionId}`)
+       .on('*', payload => {
+         console.log('New message:', payload);
+         refetch(); // Trigger refetch when message changes
+       })
+       .subscribe();
+   
+     return () => {
+       subscription.unsubscribe();
+     };
+   }, [sessionId]);
+   ```
+
+10. **TEST END-TO-END**
+    
+    - Go to chat page → send message
+    - Check Supabase console → message appears in `messages` table ✅
+    - Check chat_stats updated ✅
+    - Go to summary page
+    - Verify stats display correctly ✅
+    - Send another message in chat
+    - Summary page updates in real-time (within 2 seconds) ✅
+    - Refresh page → data persists ✅
+
+### Final Architecture
+
+```
+Frontend (React)
+├─ Chat Page → sends to /api/chat
+├─ Summary Page → fetches from /api/summary (live updated)
+└─ Both use Supabase client
+
+Backend (Express - thin layer)
+├─ /api/chat → calls Edge Function
+├─ /api/summary → calls Edge Function
+└─ Routes are just proxies
+
+Supabase (PRIMARY DATA STORE)
+├─ Edge Functions (all business logic)
+├─ Tables (all data):
+│  ├─ users
+│  ├─ sessions
+│  ├─ messages
+│  ├─ chat_stats
+│  └─ session_summaries
+├─ Realtime subscriptions (live updates)
+└─ RLS policies (user data isolation)
+```
+
+### Final Goal
+
+After you're done:
+- ✅ Summary page shows live dashboard matching the artifact style
+- ✅ Real-time stats updates (messages, response time, etc.)
+- ✅ Session list with summaries
+- ✅ All data stored in Supabase tables
+- ✅ No data stored elsewhere (files, localStorage, external DBs)
+- ✅ RLS policies enforce user privacy
+- ✅ Edge Functions handle all logic
+- ✅ Dashboard updates every 2 seconds (live)
+
+***
+
+**Start by: Create Supabase tables → Update Edge Functions → Create Summary page component → Add API route → Test end-to-end.**

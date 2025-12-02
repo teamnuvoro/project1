@@ -1,0 +1,119 @@
+You're right, my bad. **Supabase Edge Functions, not Vercel.**
+
+Here's the corrected prompt for Replit:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend chat app (Riya).
+
+### Critical Issue
+The chat endpoint is returning **HTTP 500 errors**. When users try to send a message:
+- Frontend sends POST to `/api/chat`
+- Server responds with 500
+- Chat fails silently
+- Error: "Failed to send message"
+
+### What I need you to do (Priority order)
+
+1. **DEBUG AND FIX THE /api/chat ENDPOINT**
+   - Check server logs for the exact error causing 500
+   - Likely issues:
+     - Groq API call failing (check API key format)
+     - Supabase session/message insert failing
+     - Environment variables not set correctly
+     - Request payload mismatch
+   - Fix the root cause, not just error handling
+   - Test locally: `npm run dev` → send a chat message → should work
+
+2. **REFACTOR TO USE SUPABASE EDGE FUNCTIONS**
+   - Move chat logic to Supabase Edge Functions (not Vercel)
+   - Why: Database-level execution, faster response, edit at will without redeploying backend
+   - Create Edge Function: `supabase/functions/chat/index.ts`
+   - This function:
+     - Receives user message + sessionId
+     - Validates session in Supabase
+     - Calls Groq API with conversation history
+     - Saves user message to `messages` table
+     - Saves AI response to `messages` table
+     - Returns response to frontend
+   - Frontend still calls: `POST /api/chat` (which internally calls the Edge Function)
+   - OR frontend calls Edge Function directly: `POST /functions/v1/chat`
+
+3. **WIRE GROQ API CORRECTLY IN EDGE FUNCTION**
+   - Verify `GROQ_API_KEY` is set as Supabase secret
+   - Check Groq API call format:
+     - Model: `mixtral-8x7b-32768` (or your chosen model)
+     - Messages format: `[{ role: "user", content: "..." }]`
+     - Temperature/max_tokens set correctly
+   - Add proper error handling: if Groq fails, return clear 400 error (not 500)
+
+4. **ENSURE SUPABASE INTEGRATION IN EDGE FUNCTION**
+   - Use Supabase client within the Edge Function
+   - Sessions table: Can read/verify session exists
+   - Messages table: Can insert user + AI messages
+   - Database connection is active
+   - RLS policies allow inserts (you fixed this with DROP POLICY IF EXISTS)
+
+5. **ADD COMPREHENSIVE ERROR HANDLING**
+   - Return meaningful error codes:
+     - 400: Bad request (invalid message format)
+     - 401: Unauthorized (no session/token)
+     - 500: Server error (log + return generic message to user)
+   - Log full error details server-side for debugging
+   - Return user-friendly error to frontend
+
+6. **TEST END-TO-END**
+   - Signup → Create session ✅
+   - Select persona → Save to DB ✅
+   - Send chat message → Edge Function called → Get AI response ✅
+   - Message saved in Supabase ✅
+   - No console errors ✅
+   - No 500 responses ✅
+
+### Code Structure I Want
+
+```typescript
+// Supabase Edge Function: supabase/functions/chat/index.ts
+
+POST /functions/v1/chat
+Input: { message: string, sessionId: string }
+Output: { response: string, messageId: string }
+
+Steps:
+1. Validate sessionId exists in sessions table (via Supabase client)
+2. Validate message is not empty
+3. Fetch conversation history from messages table
+4. Call Groq API with full context
+5. Save user message to messages table
+6. Save AI response to messages table
+7. Return AI response to frontend
+8. If any step fails → return clear error code + message
+```
+
+### Why Supabase Edge Functions
+- Logic lives at the database layer
+- You can edit the function without redeploying your Node backend
+- Faster execution (no network hop to separate backend)
+- Secrets managed by Supabase (GROQ_API_KEY stays secure)
+- Auto-scales with Supabase infrastructure
+
+### What NOT to do
+- Don't use Vercel Edge Functions
+- Don't just wrap errors in try-catch and return 500
+- Don't hardcode API keys
+- Don't break existing auth flow
+
+### Final Goal
+
+After you're done:
+- `/functions/v1/chat` returns 200 on success, <500 on client error
+- Chat messages flow: send → Edge Function → Groq → DB save → response
+- User sees instant message + AI typing indicator → response in 1-2 sec
+- Zero console errors in browser
+- Production-ready (ready to handle real users)
+
+***
+
+**Start by checking the server logs to find the exact 500 error, then refactor to Supabase Edge Functions.**

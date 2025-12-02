@@ -1,0 +1,50 @@
+Modify the existing chat Edge Function (supabase/functions/chat/index.ts) to use cumulative summary context.
+
+Current functionality: Receives message, calls Groq, saves response.
+
+New functionality needed:
+
+1. Before calling Groq:
+   - Fetch user_cumulative_summary from database WHERE user_id = input.userId
+   - Store in variable: userSummary
+
+2. Create function: buildSystemPrompt(userSummary)
+   - If userSummary is null, return default generic prompt
+   - If userSummary exists, return detailed context prompt
+
+   Detailed prompt should include:
+   - Introduction: "You are Rajjo, an AI companion..."
+   - Section: "ABOUT THIS USER:" followed by cumulative_summary
+   - Section: "USER'S PERSONALITY:" with traits, communication style, emotional needs, values, interests
+   - Section: "WHAT THEY'RE LOOKING FOR:" with ideal_partner_type and relationship_expectations
+   - Section: "CONVERSATION GUIDANCE:" with mood_pattern, primary_conversation_theme, engagement_level
+   - Section: "TOPICS TO EXPLORE:" with what_to_explore items
+   - Section: "SUGGESTED NEXT STEPS:" with suggested_conversation_starters
+   - Section: "GROWTH AREAS:" with growth_areas items
+   - Section: "INSTRUCTIONS:" with guidelines like:
+     * Remember what you know about this user
+     * Ask deeper questions
+     * Be genuinely interested
+     * Match their communication style
+     * Reference past conversations
+     * Help them explore new perspectives
+     * Support growth areas
+
+3. Call Groq with this structure:
+   {
+     model: "mixtral-8x7b-32768",
+     system: buildSystemPrompt(userSummary),  // ← INCLUDES FULL CONTEXT
+     messages: [conversation history + new message],
+     temperature: 0.7,
+     max_tokens: 1024
+   }
+
+4. After generating response:
+   - Save messages to database (user + assistant)
+   - Update session stats
+   - Trigger generate-user-summary Edge Function asynchronously
+     supabase.functions.invoke('generate-user-summary', { body: { userId } })
+
+5. Return response and metadata
+
+Include all error handling and logging.

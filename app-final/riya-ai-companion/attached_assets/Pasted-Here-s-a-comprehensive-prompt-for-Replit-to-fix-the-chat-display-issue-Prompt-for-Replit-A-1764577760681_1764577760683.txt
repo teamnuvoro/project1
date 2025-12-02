@@ -1,0 +1,226 @@
+Here's a comprehensive prompt for Replit to fix the chat display issue:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend chat app (Riya).
+
+### Critical Issue: Messages Not Appearing Until Page Refresh
+
+**Current behavior:**
+- User types message → clicks Send
+- Nothing happens (message doesn't appear)
+- User refreshes page
+- BOTH user message + AI response appear together
+- No error in console
+
+**Expected behavior:**
+- User types message → clicks Send
+- Message appears INSTANTLY on screen (optimistic update)
+- "Riya is typing..." indicator shows
+- AI response appears in 1-2 seconds
+- No refresh needed
+
+### Root Cause Analysis
+
+This is happening because:
+1. Frontend sends message to backend/Supabase Edge Function
+2. Edge Function saves to database
+3. But frontend is NOT updating UI optimistically
+4. Frontend is only fetching messages on page refresh
+5. Query refetch is not triggering automatically OR refetch interval is too long
+
+### What I need you to do (Priority order)
+
+1. **IMPLEMENT OPTIMISTIC UI UPDATE**
+   - When user clicks "Send":
+     a. Immediately add message to local state with `role: 'user'`
+     b. Clear input field
+     c. Display message on screen INSTANTLY
+     d. Show "Riya is typing..." indicator
+     e. Send POST request to `/api/chat` in background
+   - If request fails:
+     a. Remove optimistic message from UI
+     b. Show error toast: "Failed to send message"
+     c. Keep message in input field so user can retry
+   - If request succeeds:
+     a. Keep user message on screen (already there)
+     b. Replace "typing..." with AI response
+     c. Auto-scroll to newest message
+
+2. **FIX QUERY REFETCH FOR REAL-TIME UPDATES**
+   - In chat component, use React Query (or Tanstack Query):
+     ```typescript
+     const { data: messages } = useQuery({
+       queryKey: ['messages', sessionId],
+       queryFn: fetchMessages,
+       refetchInterval: 500, // Refetch every 500ms
+       refetchIntervalInBackground: true, // Keep refetching even when tab unfocused
+       staleTime: 0, // Treat data as stale immediately
+       gcTime: 1000 * 60 * 5, // Keep in cache for 5 min (formerly cacheTime)
+     });
+     ```
+   - Ensure this is configured correctly in your chat component
+
+3. **ADD AUTO-SCROLL TO LATEST MESSAGE**
+   - After message appears (whether optimistic or from server):
+     a. Scroll to bottom of chat automatically
+     b. Use `useEffect` with ref to last message:
+        ```typescript
+        useEffect(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, [messages]);
+        ```
+     c. Only scroll if user is near bottom (don't scroll if they're reading old messages)
+
+4. **ENSURE EDGE FUNCTION SAVES CORRECTLY**
+   - In `supabase/functions/chat/index.ts`:
+     a. Validate request immediately (return 400 if invalid)
+     b. Check session exists
+     c. Call Groq API
+     d. Save user message to `messages` table IMMEDIATELY (don't wait for Groq)
+     e. Save AI response AFTER receiving from Groq
+     f. Return response with `{ success: true, response: "...", messageId: "..." }`
+   - Ensure database INSERT happens BEFORE response is sent
+
+5. **ADD COMPREHENSIVE ERROR HANDLING**
+   - If Edge Function returns error:
+     a. Log full error to console (for debugging)
+     b. Show user-friendly error toast: "Failed to send message. Try again."
+     c. Preserve message in input field
+     d. Don't remove optimistic message (let user decide)
+   - If network timeout:
+     a. Show: "Network error. Check connection."
+     b. Allow user to retry
+
+6. **ADD LOADING STATES**
+   - While waiting for response:
+     a. Disable Send button (prevent duplicate sends)
+     b. Show "Sending..." next to Send button
+     c. Show "Riya is typing..." indicator below last message
+   - After response received:
+     a. Re-enable Send button
+     b. Hide "Sending..." and "typing..." indicators
+
+7. **TEST LOCALLY - STEP BY STEP**
+   - Open app in browser
+   - Open DevTools Console (F12)
+   - Go to chat page
+   - Type message: "Hello"
+   - Check BEFORE clicking Send:
+     a. Input field shows "Hello" ✅
+   - Click Send
+   - Check IMMEDIATELY after Send:
+     a. Message appears in chat ✅
+     b. "Riya is typing..." shows ✅
+     c. Input field is cleared ✅
+     d. Send button is disabled ✅
+     e. No console errors ✅
+   - Wait 1-2 seconds
+   - Check AFTER response:
+     a. AI response appears ✅
+     b. "Typing..." disappears ✅
+     c. Send button is re-enabled ✅
+     d. Chat auto-scrolled to bottom ✅
+   - Refresh page (intentionally)
+   - Check AFTER refresh:
+     a. Same messages still visible ✅
+     b. No duplicate messages ✅
+
+8. **CHECK MESSAGE TABLE IN SUPABASE**
+   - Go to Supabase console
+   - Check `messages` table
+   - Verify:
+     a. User message was inserted
+     b. AI response was inserted
+     c. Both have correct `session_id`
+     d. Both have correct `role` ('user' or 'assistant')
+     e. Timestamps are correct
+     f. Content is not truncated
+
+9. **OPTIMIZE QUERY PERFORMANCE**
+   - Add index to `messages` table on `session_id` for faster queries
+   - Add index on `created_at` for sorting
+   - SQL: 
+     ```sql
+     CREATE INDEX idx_messages_session_id ON messages(session_id);
+     CREATE INDEX idx_messages_created_at ON messages(created_at);
+     ```
+
+10. **ADD NETWORK DIAGNOSTICS (for debugging)**
+    - In chat component, log:
+      ```typescript
+      console.log('Sending message:', { message, sessionId });
+      console.log('Response received:', response);
+      console.log('Message added to UI at:', new Date().toLocaleTimeString());
+      ```
+    - This helps identify if issue is:
+      a. Frontend not updating UI ← Most likely
+      b. Backend not returning response
+      c. Database not saving
+
+### Code Structure I Want
+
+```typescript
+// Frontend: Send message flow
+
+const handleSendMessage = async (messageText: string) => {
+  // 1. Optimistic update
+  const optimisticMessage = {
+    id: generateTempId(),
+    content: messageText,
+    role: 'user',
+    created_at: new Date().toISOString(),
+  };
+  setMessages(prev => [...prev, optimisticMessage]);
+  setInputValue('');
+  setIsLoading(true);
+
+  try {
+    // 2. Send to backend
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: messageText, sessionId }),
+    });
+
+    if (!response.ok) throw new Error('Failed to send message');
+
+    const data = await response.json();
+
+    // 3. Add AI response
+    const aiMessage = {
+      id: data.messageId,
+      content: data.response,
+      role: 'assistant',
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, aiMessage]);
+
+  } catch (error) {
+    // 4. Error handling
+    console.error('Chat error:', error);
+    setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+    setInputValue(messageText); // Restore input
+    showErrorToast('Failed to send message. Try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+```
+
+### Final Goal
+
+After you're done:
+- Message appears INSTANTLY when user sends
+- "Riya is typing..." shows immediately
+- AI response appears in 1-2 seconds
+- Chat auto-scrolls to bottom
+- No page refresh needed
+- Errors are caught and shown gracefully
+- User experience is smooth and professional
+
+***
+
+**Start by checking: Is optimistic update implemented? If not, add it first. Then verify query refetch is working. Then test end-to-end.**

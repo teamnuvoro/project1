@@ -1,0 +1,65 @@
+╔═══════════════════════════════════════════════════════════════╗
+║          RIYA AI - GITHUB INTEGRATION QUICK REFERENCE          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+PRIMARY REPOSITORY: https://github.com/teamnuvoro/project1
+
+═══════════════════════════════════════════════════════════════
+
+📱 EVERYDAY COMMANDS:
+
+  Quick Sync Everything:
+  bash replit-quick-sync.sh
+
+  Detailed Sync:
+  bash replit-git-sync.sh pull    # Get latest
+  bash replit-git-sync.sh push    # Send changes
+  bash replit-git-sync.sh sync    # Full sync
+
+═══════════════════════════════════════════════════════════════
+
+🚀 FIRST TIME SETUP:
+
+  Run this ONCE in Shell:
+  bash replit-git-sync.sh setup
+
+═══════════════════════════════════════════════════════════════
+
+📋 WORKFLOW:
+
+  1. Pull latest:     bash replit-git-sync.sh pull
+  2. Make changes in Replit
+  3. Push changes:    bash replit-git-sync.sh push
+
+═══════════════════════════════════════════════════════════════
+
+💡 TIPS:
+
+  • Always pull before starting work
+  • Use quick-sync.sh for one-command workflows
+  • Check git status:  git status
+  • See recent commits: git log --oneline -5
+  • All files are 325+ auto-synced
+
+═══════════════════════════════════════════════════════════════
+
+📚 DOCUMENTATION:
+
+  Full Setup Guide:    GITHUB_INTEGRATION.md
+  Quick Reference:     GITHUB_SETUP.md
+  This File:          GITHUB_QUICK_REFERENCE.txt
+
+═══════════════════════════════════════════════════════════════
+
+🔐 REPOSITORY INFO:
+
+  Owner:    teamnuvoro
+  Repo:     project1
+  Branch:   main
+  Files:    325+ source files
+  URL:      https://github.com/teamnuvoro/project1
+
+═══════════════════════════════════════════════════════════════
+
+Ready to sync! Use bash replit-quick-sync.sh anytime. 🚀
+

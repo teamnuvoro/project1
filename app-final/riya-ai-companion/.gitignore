@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+server/public
+
+# Environment files (NEVER commit with real values)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tar.gz
+*.tmp
+.cache/
+
+# Vite
+vite.config.ts.*
+
+# Replit-specific (keep for Replit, ignore for external deploy)
+# .replit
+# replit.nix
+
+# Test coverage
+coverage/
+
+# TypeScript cache
+*.tsbuildinfo

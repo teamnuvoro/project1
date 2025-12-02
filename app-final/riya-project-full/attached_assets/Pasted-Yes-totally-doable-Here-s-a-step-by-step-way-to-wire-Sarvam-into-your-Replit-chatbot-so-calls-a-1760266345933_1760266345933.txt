@@ -1,0 +1,165 @@
+Yes—totally doable. Here’s a **step-by-step** way to wire Sarvam into your Replit chatbot so calls are **voice-first**, use your **stored user summary**, and also react to the **live transcript**.
+
+---
+
+# 0) Prep (once)
+
+1. **Create Sarvam account → API key** (keep it server-side).
+   Add to Replit Secrets as `SARVAM_API_KEY`. Sarvam expects header:
+   `api-subscription-key: <your-api-key>`. ([Sarvam AI Developer Documentation][1])
+
+2. **Pick endpoints you need**
+
+   * **Chat** (LLM): `POST /chat/completions`. ([Sarvam AI Developer Documentation][2])
+   * **Streaming STT** (mic → text) via **WebSocket**. ([Sarvam AI Developer Documentation][3])
+   * **Streaming TTS** (text → audio) via **WebSocket**. ([Sarvam AI Developer Documentation][4])
+
+---
+
+# 1) Replit project structure (Node/Express example)
+
+```
+/index.js            # Express server (REST + WS proxy)
+/services/sarvam.js  # Small wrappers for Chat, STT-WS, TTS-WS
+/db/                 # your Supabase (or PG) client for user_summary_latest
+/public/             # your chat + call UI
+```
+
+In Replit, set Secrets: `SARVAM_API_KEY`, `DATABASE_URL` (if using Supabase/PG).
+
+---
+
+# 2) Memory-aware Chat (text chat path)
+
+**Idea:** Every turn, fetch the **latest user summary** from your DB and inject it into the **system** message along with the **last few utterances** from this session. Sarvam’s chat API uses the standard `messages[]` format (`system`/`user`/`assistant`). ([Sarvam AI Developer Documentation][5])
+
+**Minimal request shape:**
+
+```json
+POST /chat/completions
+{
+  "model": "sarvam-m",
+  "messages": [
+    {"role": "system", "content": "You are Riya… Hinglish. User summary: <paste from DB>. Use it to personalize but don't repeat it."},
+    {"role": "user", "content": "<latest user utterance>"},
+    {"role": "assistant", "content": "<your last reply, optional>"},
+    {"role": "user", "content": "<previous user line or two>"}
+  ],
+  "temperature": 0.3
+}
+```
+
+Send with header `api-subscription-key`. ([Sarvam AI Developer Documentation][2])
+
+**Server steps (Express):**
+
+1. `/api/chat`: Read `userId`, `latestUserText`.
+2. `getUserSummaryLatest(userId)` → returns your “partner_type / traits / next_time_focus”.
+3. Build `messages[]` as above; call Sarvam **Chat**; return text back to UI. ([Sarvam AI Developer Documentation][6])
+
+---
+
+# 3) Voice Calls (real-time)
+
+**Flow:** Mic → **STT-WS** → text → **Chat** (with DB summary + rolling window) → reply text → **TTS-WS** → play audio stream.
+
+* **STT streaming WebSocket**: low-latency live transcription. ([Sarvam AI Developer Documentation][3])
+* **TTS streaming WebSocket**: low-latency audio playback as it’s generated. ([Sarvam AI Developer Documentation][4])
+
+**Server steps:**
+
+1. Create `/ws/stt` endpoint that opens a **server-side** WS to Sarvam STT and **pipes** frames from the browser mic (WebRTC/MediaRecorder) to Sarvam; forward transcripts back to browser. ([Sarvam AI Developer Documentation][3])
+2. Create `/ws/tts` endpoint that accepts reply text, opens a WS to Sarvam TTS, and streams PCM/OGG chunks back to the browser for immediate playback. ([Sarvam AI Developer Documentation][4])
+
+**Why proxy through your server?** To keep `SARVAM_API_KEY` secret and normalize audio formats.
+
+**TTS/voices & Indian languages:** Sarvam Bulbul voices with Indic accents; set `language` (e.g., `hi-IN`, `en-IN`, `code-mix`). ([Sarvam AI Developer Documentation][7])
+
+---
+
+# 4) Conversation state (live)
+
+Maintain a **rolling context** for the current call:
+
+```ts
+state = {
+  lastTurns: [ ... up to 10 pairs of user/assistant text ... ],
+  userSummaryLatest: { partner_type_one_liner, top_3_traits_you_value, ... } // from DB
+}
+```
+
+On each new **final** STT transcript:
+
+1. Append to `lastTurns`.
+2. Call **Chat** with:
+
+   * `system` = persona + **userSummaryLatest**
+   * message list = `lastTurns` (trim to fit token budget). ([Sarvam AI Developer Documentation][5])
+3. Send reply to **TTS-WS** → play audio immediately. ([Sarvam AI Developer Documentation][4])
+
+---
+
+# 5) End-of-call summary (update memory)
+
+When user hangs up:
+
+1. Take the **transcript** (concatenate final STT segments).
+2. Run your **Summary Prompt** (the one we drafted) through Sarvam **Chat** to get:
+
+   * `partner_type_one_liner`, `top_3_traits`, `watchouts`, `next_time_focus`, `confidence_score`.
+3. **Upsert** into your `sessions` table and **mirror** into `user_summary_latest` (for fast reads next session).
+   (Your DB design already covers this.)
+
+---
+
+# 6) Client glue (browser)
+
+* **Mic capture**: `MediaStream` + `MediaRecorder` (or WebAudio) → small chunks (e.g., 20–60 ms) → send to `/ws/stt`.
+* **Playback**: create `AudioContext` and feed streaming chunks from `/ws/tts`.
+* **UI**: show “Listening… / Thinking… / Speaking…” states; surface paywall timer later.
+
+---
+
+# 7) Prompts to actually use memory + live input
+
+**System (each turn):**
+“Use Hinglish. Personalize using: <user_summary_latest>. Always prioritize the **current user utterance** and the last 8–10 turns. Every ~9th turn, ask one gentle preference probe. No explicit content.”
+
+**User message:** latest transcript line.
+**Assistant memory discipline:** keep replies **1–3 sentences** for voice latency.
+
+Sarvam’s **Meta Prompt** docs give good structuring tips for this pattern. ([Sarvam AI Developer Documentation][8])
+
+---
+
+# 8) Latency tips
+
+* Use **streaming** STT/TTS (not batch). ([Sarvam AI Developer Documentation][3])
+* Keep replies short; set `temperature: 0.3`.
+* Preload voice (TTS WS) at call start.
+* Trim `messages[]` to recent turns to reduce tokens. ([Sarvam AI Developer Documentation][5])
+
+---
+
+# 9) Security & quotas
+
+* Never expose the API key in client JS—keep it in server headers (`api-subscription-key`). ([Sarvam AI Developer Documentation][1])
+* Handle **WS start/end events** from STT as per Sarvam changelog (useful for accurate timing). ([Sarvam AI Developer Documentation][9])
+
+---
+
+## Is your exact goal possible?
+
+**Yes**—you can (a) inject **previous call/chat summaries** each turn, (b) use the **live transcript** to shape the next reply, and (c) speak back in real time with Indic voices—**all with Sarvam’s chat + streaming STT/TTS**. ([Sarvam AI Developer Documentation][2])
+
+If you want, I can draft tiny **Express route/WS stubs** you can paste into Replit (Chat proxy + STT/TTS proxies + Supabase read/write) to make this concrete.
+
+[1]: https://docs.sarvam.ai/api-reference-docs/authentication?utm_source=chatgpt.com "Sarvam AI Authentication Guide - API Key Setup"
+[2]: https://docs.sarvam.ai/api-reference-docs/chat/completions?utm_source=chatgpt.com "Chat Completions | Sarvam API Docs"
+[3]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/speech-to-text/streaming-api?utm_source=chatgpt.com "Streaming Speech-to-Text API"
+[4]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/text-to-speech/streaming-api?utm_source=chatgpt.com "Streaming Text-to-Speech API"
+[5]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/chat-completion/how-to/list-your-chat-messages?utm_source=chatgpt.com "How to list your chat messages | Sarvam API Docs"
+[6]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/chat-completion/overview?utm_source=chatgpt.com "Chat Completions Overview | Sarvam API Docs"
+[7]: https://docs.sarvam.ai/api-reference-docs/endpoints/text-to-speech?utm_source=chatgpt.com "Text-to-Speech Overview | Sarvam API Docs"
+[8]: https://docs.sarvam.ai/api-reference-docs/metaprompt?utm_source=chatgpt.com "Meta Prompt Guide | Sarvam API Docs"
+[9]: https://docs.sarvam.ai/api-reference-docs/changelog?utm_source=chatgpt.com "Change Log | Sarvam API Docs"

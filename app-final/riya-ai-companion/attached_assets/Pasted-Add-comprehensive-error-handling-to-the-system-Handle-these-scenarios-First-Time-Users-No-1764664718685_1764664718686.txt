@@ -1,0 +1,78 @@
+Add comprehensive error handling to the system.
+
+Handle these scenarios:
+
+**First-Time Users:**
+- No summary exists yet
+- Show welcome message: "Chat to build your profile!"
+- Show 25% understanding level
+- Show empty state for attributes
+
+**Missing Data:**
+- Show "Not yet determined" for undefined fields
+- Show empty list for empty arrays
+- Don't crash on missing data
+
+**Network Errors:**
+- Retry logic: Retry 3 times with exponential backoff
+- Show error message to user
+- Provide retry button
+
+**Groq API Errors:**
+- Fallback to generic chat if Groq fails
+- Don't block user from chatting
+- Log error for debugging
+
+**Concurrent Updates:**
+- Prevent race conditions when updating summary
+- Use transactions or locking if needed
+- Queue requests if necessary
+
+**Session Timeout:**
+- Check session validity
+- Refresh summary data if stale (>1 hour)
+- Gracefully handle expired sessions
+
+**Edge Cases:**
+1. User deletes all conversations:
+   - Reset understanding_level to 25%
+   - Clear summary fields
+   - Show fresh start message
+
+2. User sends very long message:
+   - Truncate display if needed
+   - Show "Read more" option
+   - Store full text in database
+
+3. Summary is very long:
+   - Show truncated version in card
+   - Add "Read full summary" link
+   - Show full in modal
+
+4. Arrays have 100+ items:
+   - Paginate or limit display to 10
+   - Add "View all" link
+   - Sort by relevance
+
+5. Understanding level calculation edge cases:
+   - sessionCount = 0: Return 25%
+   - sessionCount < 0: Return 25%
+   - sessionCount > 1000: Return 75%
+   - NaN values: Default to previous value
+
+**Error Boundaries:**
+- Wrap SummaryTrackerPage in Error Boundary
+- Show fallback UI on crash
+- Log error for debugging
+
+**Loading States:**
+- Show skeleton loaders while fetching
+- Show spinner for calculations
+- Disable buttons while loading
+
+**Validation:**
+- Validate userId exists before API call
+- Validate response data structure
+- Type-check all data from API
+
+Include TypeScript error types and proper error logging.

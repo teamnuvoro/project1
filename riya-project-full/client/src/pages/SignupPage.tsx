@@ -16,7 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 
 const signupSchema = z.object({
@@ -30,6 +30,8 @@ type SignupFormData = z.infer<typeof signupSchema>;
 export default function SignupPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const currentStep = 2;
+  const totalSteps = 6;
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -45,6 +47,7 @@ export default function SignupPage() {
       const response = await apiRequest("POST", "/api/auth/signup", {
         ...data,
         gender: "prefer_not_to_say",
+        persona: "sweet_supportive", // Set Riya as default
       });
       return response.json();
     },
@@ -69,146 +72,171 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen gradient-welcome flex flex-col items-center px-6 py-8">
-      {/* Avatar */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-        className="mt-8 mb-6"
-      >
-        <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-lg">
-          <img
-            src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop&crop=face"
-            alt="Riya"
-            className="w-full h-full object-cover"
-          />
-        </div>
-      </motion.div>
+    <div className="min-h-screen w-full bg-gradient-to-b from-purple-50 via-pink-50 to-white flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12 relative overflow-hidden">
+      {/* Background Gradient */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-10 left-5 w-48 h-48 sm:w-72 sm:h-72 bg-purple-200/30 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-10 right-5 w-64 h-64 sm:w-96 sm:h-96 bg-pink-200/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+      </div>
 
-      {/* Title */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-        className="text-center mb-8"
-      >
-        <h1 
-          className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-500 bg-clip-text text-transparent mb-2"
-          data-testid="text-signup-title"
+      {/* Main Content */}
+      <div className="relative z-10 w-full max-w-md flex flex-col items-center">
+        {/* Profile Picture */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="mb-6"
         >
-          Tell Us About Yourself
-        </h1>
-        <p className="text-muted-foreground" data-testid="text-signup-subtitle">
-          Share your details to start your journey
-        </p>
-      </motion.div>
-
-      {/* Form Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        className="w-full max-w-md bg-white rounded-3xl p-8 shadow-xl flex-1"
-      >
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-foreground font-medium">Your Name</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Enter your full name"
-                      className="h-12 rounded-xl border-gray-200 bg-gray-50 focus:bg-white transition-colors"
-                      {...field}
-                      data-testid="input-name"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-4 border-white shadow-xl">
+            <img
+              src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop&crop=face"
+              alt="Riya"
+              className="w-full h-full object-cover"
             />
+          </div>
+        </motion.div>
 
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-foreground font-medium">Email Address</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="your.email@example.com"
-                      className="h-12 rounded-xl border-gray-200 bg-gray-50 focus:bg-white transition-colors"
-                      {...field}
-                      data-testid="input-email"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="phoneNumber"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-foreground font-medium">Phone Number</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="tel"
-                      placeholder="+91 98765 43210"
-                      className="h-12 rounded-xl border-gray-200 bg-gray-50 focus:bg-white transition-colors"
-                      {...field}
-                      data-testid="input-phone"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </form>
-        </Form>
-      </motion.div>
-
-      {/* Submit Button */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
-        className="w-full max-w-md mt-6 mb-8"
-      >
-        <Button
-          onClick={form.handleSubmit(onSubmit)}
-          className="w-full h-14 text-lg rounded-full gradient-primary-button text-white shadow-lg shadow-purple-400/30"
-          disabled={signupMutation.isPending}
-          data-testid="button-signup"
+        {/* Title */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="text-center mb-6 sm:mb-8"
         >
-          {signupMutation.isPending ? (
-            <>
-              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              Creating Account...
-            </>
-          ) : (
-            "Submit"
-          )}
-        </Button>
-
-        <p className="text-center text-muted-foreground mt-4">
-          Already have an account?{" "}
-          <button
-            onClick={() => setLocation("/login")}
-            className="text-foreground font-semibold underline underline-offset-2"
-            data-testid="link-login"
+          <h1 
+            className="text-3xl sm:text-4xl font-bold text-purple-600 mb-2"
+            data-testid="text-signup-title"
           >
-            Login
+            Tell Us About Yourself
+          </h1>
+          <p className="text-base sm:text-lg text-gray-600" data-testid="text-signup-subtitle">
+            Share your details to start your journey
+          </p>
+        </motion.div>
+
+        {/* Form Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="w-full bg-white rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-xl mb-6"
+        >
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 sm:space-y-6">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-gray-700 font-medium text-sm sm:text-base">Your Name</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter your full name"
+                        className="h-12 sm:h-14 rounded-xl border-gray-200 bg-gray-50 focus:bg-white transition-colors text-sm sm:text-base"
+                        {...field}
+                        data-testid="input-name"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-gray-700 font-medium text-sm sm:text-base">Email Address</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        placeholder="your.email@example.com"
+                        className="h-12 sm:h-14 rounded-xl border-gray-200 bg-gray-50 focus:bg-white transition-colors text-sm sm:text-base"
+                        {...field}
+                        data-testid="input-email"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-gray-700 font-medium text-sm sm:text-base">Phone Number</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="tel"
+                        placeholder="+91 98765 43210"
+                        className="h-12 sm:h-14 rounded-xl border-gray-200 bg-gray-50 focus:bg-white transition-colors text-sm sm:text-base"
+                        {...field}
+                        data-testid="input-phone"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </form>
+          </Form>
+        </motion.div>
+
+        {/* Submit Button */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="w-full mb-6"
+        >
+          <Button
+            onClick={form.handleSubmit(onSubmit)}
+            className="w-full h-14 sm:h-16 text-base sm:text-lg font-semibold rounded-full bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300"
+            disabled={signupMutation.isPending}
+            data-testid="button-signup"
+          >
+            {signupMutation.isPending ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Creating Account...
+              </>
+            ) : (
+              "Submit"
+            )}
+          </Button>
+        </motion.div>
+
+        {/* Pagination Bar */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="w-full max-w-md bg-gray-800 rounded-full px-4 py-3 flex items-center justify-between shadow-lg"
+        >
+          <button
+            onClick={() => setLocation("/")}
+            className="p-2 hover:bg-gray-700 rounded-full transition-colors text-white"
+            aria-label="Previous step"
+          >
+            <ChevronLeft className="w-5 h-5" />
           </button>
-        </p>
-      </motion.div>
+          <span className="text-white font-medium text-sm sm:text-base">
+            {currentStep}/{totalSteps}
+          </span>
+          <button
+            onClick={form.handleSubmit(onSubmit)}
+            disabled={signupMutation.isPending}
+            className="p-2 hover:bg-gray-700 rounded-full transition-colors text-white disabled:opacity-50"
+            aria-label="Next step"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </motion.div>
+      </div>
     </div>
   );
 }

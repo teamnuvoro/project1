@@ -1,0 +1,107 @@
+Yes. If you are not dialing a phone number, think of it as a “web call” inside your site or app. You will capture the user’s mic in the browser, send that audio to Sarvam’s Speech-to-Text in real time, generate a reply, then stream Sarvam’s Text-to-Speech audio back to the browser to play instantly.
+
+Below is a simple, non-technical plan that works well.
+
+# The simplest working setup
+
+1. Browser
+
+* Show a “Start call” button.
+* When clicked, capture microphone and play incoming audio through the speakers.
+* Send mic audio to your backend.
+* Play audio you receive back from your backend.
+
+2. Backend server
+
+* Keep your Sarvam API key safe here.
+* Open a WebSocket to Sarvam Streaming STT and forward the user’s audio to it. You get live text back. ([Sarvam AI Developer Documentation][1])
+* Decide what to say next. This can be rules, your own LLM, or Sarvam chat.
+* Open a WebSocket to Sarvam Streaming TTS. Send a quick “config” message once, then send the bot’s reply as text, and finally a “flush”. Stream the audio chunks you receive back to the browser for instant playback. ([Sarvam AI Developer Documentation][2])
+
+That is all you need for a two-way real-time “internet call”.
+
+# What you send to Sarvam
+
+A) Streaming Speech-to-Text WS
+
+* Connect, include your API key in headers.
+* Send small audio frames continuously.
+* Receive partial and final transcripts in real time. ([Sarvam AI Developer Documentation][1])
+
+B) Streaming Text-to-Speech WS
+
+* Connect, include your API key in headers.
+* First send a config message, for example: language, voice, pace, pitch, and preferred audio format.
+* Send “text” messages for the reply.
+* Send “flush” to finalize that reply.
+* Receive audio chunks immediately and a completion event when done. ([Sarvam AI Developer Documentation][2])
+
+Sarvam’s TTS pages list voice and audio options, and useful “how-to” settings like bitrate and buffering to balance speed and naturalness. ([Sarvam AI Developer Documentation][3])
+
+# A very clear step-by-step
+
+Step 1. Frontend “web call” UI
+
+* Button: Start/Stop.
+* When started, capture mic audio with getUserMedia and send the raw chunks to your backend.
+* Also create an audio element to play incoming bot audio.
+
+Step 2. Backend “audio bridge”
+
+* On client connect, open two Sarvam sockets:
+
+  1. STT Streaming WS for inbound audio → text. ([Sarvam AI Developer Documentation][1])
+  2. TTS Streaming WS for text → outbound audio. ([Sarvam AI Developer Documentation][2])
+* Forward mic frames to STT.
+* When you receive a sentence or end-of-utterance from STT, call your dialog logic to craft a response string.
+* Send TTS “config” once per session, then “text”, then “flush”. Stream TTS audio chunks back to the browser immediately as they arrive.
+
+Step 3. Barge-in so users can interrupt
+
+* Keep listening to the mic while you are playing TTS.
+* If STT shows the user has started speaking, pause or stop playback and switch to listening mode. (Sarvam’s streaming STT is designed for low-latency interaction.) ([Sarvam AI Developer Documentation][1])
+
+Step 4. Finish the call
+
+* When the user clicks End, close both Sarvam sockets and the browser stream.
+
+# What to store in your database
+
+Keep it light. Do not block the live call on the database.
+
+* calls: id, started_at, ended_at, chosen language, status
+* turns: call_id, user_text, bot_text, timestamps
+* metrics: stt_latency_ms, tts_latency_ms, audio_durations
+* audio_blobs: optional, store files in S3 and keep only URLs
+
+This gives you analytics and the ability to review conversations later.
+
+# Practical tips
+
+* Audio format and rates
+  For browser “web calls”, capturing at 16 kHz PCM or Opus works fine. Sarvam’s STT streaming accepts real-time audio and is built for low latency. ([Sarvam AI Developer Documentation][1])
+  Sarvam TTS lets you control output bitrate and buffering so audio starts quickly and sounds natural. ([Sarvam AI Developer Documentation][4])
+
+* Voices and languages
+  Pick a voice and target language in the TTS config. Sarvam’s TTS overview shows model types and options. ([Sarvam AI Developer Documentation][3])
+
+* Keep your key on the server
+  Never call Sarvam WebSockets directly from the browser with your API key. Always proxy through your backend.
+
+# One-day build checklist
+
+1. Create a minimal web page with Start/Stop and a waveform or “Listening…” indicator.
+2. Implement a backend route that accepts mic chunks and another that streams bot audio back.
+3. Wire backend to Sarvam Streaming STT. Test that you get text while speaking. ([Sarvam AI Developer Documentation][1])
+4. Add a tiny dialog function: for now echo or use fixed replies.
+5. Wire backend to Sarvam Streaming TTS. Config once, send text, flush, stream audio back. ([Sarvam AI Developer Documentation][2])
+6. Add barge-in: if new mic speech appears, stop playback and go back to listening.
+7. Log turns in a simple table.
+8. Add language and voice settings if you need multilingual.
+
+If you want, tell me your exact stack (plain WebSocket or WebRTC in the browser, Node or Python on the server). I can give you a small starter blueprint that matches those choices and plugs into Sarvam’s streaming STT and TTS exactly as documented. ([Sarvam AI Developer Documentation][1])
+
+[1]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/speech-to-text/streaming-api?utm_source=chatgpt.com "Streaming Speech-to-Text API"
+[2]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/text-to-speech/streaming-api?utm_source=chatgpt.com "Streaming Text-to-Speech API"
+[3]: https://docs.sarvam.ai/api-reference-docs/endpoints/text-to-speech?utm_source=chatgpt.com "Text-to-Speech Overview | Sarvam API Docs"
+[4]: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/text-to-speech/how-to/set-bitrate-for-output?utm_source=chatgpt.com "How to set output_audio_bitrate | Sarvam API Docs"

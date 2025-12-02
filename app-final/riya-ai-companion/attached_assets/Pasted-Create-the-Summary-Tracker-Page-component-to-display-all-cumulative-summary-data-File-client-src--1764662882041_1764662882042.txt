@@ -1,0 +1,64 @@
+Create the Summary Tracker Page component to display all cumulative summary data.
+
+File: client/src/pages/SummaryTrackerPage.tsx
+
+First: npm install react-circular-progressbar
+
+Component requirements:
+
+1. Fetch data:
+   - Get userId from localStorage
+   - Fetch from /api/user-summary/:userId
+   - Use React Query with 5-second refetch interval
+
+2. Understanding Level Section:
+   - Use react-circular-progressbar component
+   - Display circular progress bar with percentage
+   - Show value from userSummary.understanding_level
+   - Add color gradient (blue to purple)
+   - Include explanation box of how understanding grows:
+     * "Session 1: Starts at 25%"
+     * "Sessions 2-3: +10% and +5% (rapid learning)"
+     * "Sessions 4+: +5%, +2.5%, +1.5% (deep understanding)"
+     * "Max: 75%"
+
+3. Progression Timeline:
+   - Call getUnderstandingProgression(total_sessions_count)
+   - Display first 10 sessions in a list
+   - Each row: Session X | [Progress bar] | +Y%
+   - Use gradient backgrounds
+
+4. Summary Cards Grid (3 columns):
+   - Card 1: "Ideal Partner Type" - ideal_partner_type - icon 💕 - red background
+   - Card 2: "Communication Style" - communication_style - icon 💬 - blue background
+   - Card 3: "Relationship Expectations" - relationship_expectations - icon 🤝 - green background
+   - Card 4: "Primary Topic" - primary_conversation_theme - icon 🎯 - yellow background
+   - Card 5: "Your Mood Pattern" - mood_pattern - icon 🌤️ - orange background
+   - Card 6: "Engagement Level" - engagement_level - icon ⚡ - purple background
+
+5. Traits Section:
+   - Display personality_traits as purple badges with ✨ icon
+   - Display emotional_needs as blue badges with 💙 icon
+   - Display values as green badges with 🎯 icon
+   - Display interests as orange badges with 🌟 icon
+   - Each badge is a pill-shaped colored element
+
+6. Growth Section:
+   - What to explore (with 🗺️ icon) - as list with arrow bullets
+   - Suggested conversation starters (with 💬 icon)
+   - Growth areas (with 🌱 icon)
+
+7. Statistics at bottom:
+   - Box 1: Sessions count - value in large font
+   - Box 2: Messages count
+   - Box 3: Understanding percentage
+   - Box 4: Last updated date
+
+Use:
+- Gradient backgrounds (purple to blue, blue to green, etc.)
+- Smooth animations and transitions
+- Responsive grid layout
+- Loading states while fetching
+- Error states if data unavailable
+
+Include proper TypeScript types and error handling.

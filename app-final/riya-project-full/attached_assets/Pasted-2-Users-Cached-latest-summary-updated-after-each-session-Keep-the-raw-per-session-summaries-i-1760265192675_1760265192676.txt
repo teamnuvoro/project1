@@ -1,0 +1,91 @@
+2) Users + Cached “latest” summary (updated after each session)
+Keep the raw per-session summaries in sessions. Mirror the latest into user_summary_latest for quick reads.
+CREATE TABLE users (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number   TEXT,
+  name           TEXT,
+  email          CITEXT,
+  gender         gender,
+  premium_user   BOOLEAN NOT NULL DEFAULT false,
+  registration_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+  locale         TEXT DEFAULT 'hi-IN',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON users (premium_user);
+CREATE INDEX ON users (registration_date);
+
+-- Cached latest “Know Your Type” (fast profile reads)
+CREATE TABLE user_summary_latest (
+  user_id                 UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  partner_type_one_liner  TEXT,
+  top_3_traits_you_value  TEXT[],   -- ['patience','humor','ambition']
+  what_you_might_work_on  TEXT[],   -- short bullets
+  next_time_focus         TEXT[],   -- retention hooks
+  love_language_guess     TEXT,
+  communication_fit       TEXT,
+  confidence_score        NUMERIC(4,2),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+3) Sessions (chat or call) — holds the per-session summary
+CREATE TABLE sessions (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type                   session_type NOT NULL DEFAULT 'chat',
+  started_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at               TIMESTAMPTZ,
+
+  -- Summary captured at end of session
+  partner_type_one_liner TEXT,
+  top_3_traits_you_value TEXT[],
+  what_you_might_work_on TEXT[],
+  next_time_focus        TEXT[],
+  love_language_guess    TEXT,
+  communication_fit      TEXT,
+  confidence_score       NUMERIC(4,2),
+
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON sessions (user_id, started_at);
+CREATE INDEX ON sessions (type, started_at);
+
+
+4) Messages (combines your “Message” + “Evaluation” tables)
+CREATE TABLE messages (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        message_role NOT NULL,            -- 'user' | 'ai'
+  tag         message_tag  NOT NULL DEFAULT 'general', -- 'general' | 'evaluation'
+  text        TEXT NOT NULL,                    -- exact message
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON messages (session_id, created_at);
+CREATE INDEX ON messages (user_id, created_at);
+CREATE INDEX ON messages (tag);
+
+Map your four tags like this:
+ • User Sent – General → role='user', tag='general'
+ • AI Sent – General → role='ai', tag='general'
+ • AI Sent – For Evaluation → role='ai', tag='evaluation'
+ • User Sent – For Evaluation → role='user', tag='evaluation'
+
+5) Calls (voice metadata + transcript)
+CREATE TABLE calls (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id       UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  transcript       TEXT,
+  started_at       TIMESTAMPTZ NOT NULL,
+  ended_at         TIMESTAMPTZ NOT NULL,
+  duration_seconds INTEGER GENERATED ALWAYS AS (EXTRACT(EPOCH FROM (ended_at - started_at))) STORED
+);
+
+CREATE INDEX ON calls (user_id, started_at);
+CREATE INDEX ON calls (session_id);

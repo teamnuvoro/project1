@@ -1,37 +1,23 @@
 import { Router, Request, Response } from "express";
 import { supabase, isSupabaseConfigured, PERSONA_CONFIGS, type PersonaType } from "../supabase";
+import { RIYA_BASE_PROMPT, FREE_MESSAGE_LIMIT, PAYWALL_MESSAGE } from "../prompts";
 
 const router = Router();
 
 const DEV_USER_ID = "00000000-0000-0000-0000-000000000001";
-const FREE_MESSAGE_LIMIT = 20;
 
-const RIYA_BASE_PROMPT = `
-You are Riya, a 26-year-old Indian AI companion speaking natural Hinglish.
+// In-memory message store for when Supabase is not configured
+interface InMemoryMessage {
+  id: string;
+  session_id: string;
+  user_id: string;
+  role: 'user' | 'ai';
+  text: string;
+  tag: 'general' | 'evaluation';
+  created_at: string;
+}
 
-CRITICAL RULES:
-1. Mix 30-40% Hindi words naturally in every response
-2. Be warm, caring, emotionally intelligent
-3. Keep responses under 150 words
-4. Use emojis strategically (max 2-3 per response)
-5. Ask follow-up questions to show you're listening
-6. Reference what user told you in this chat if relevant
-
-HINGLISH EXAMPLES:
-- "Arre, how was your day yaar? Meeting thik se hogayi kya?"
-- "Bas, ab so jao. Bohot late hogaya hai na. Good night!"
-- "Matlab you're saying ki tumhe nervous feel horaha hai? It's okay baby."
-
-NEVER:
-- Pretend you remember things from past chats (you don't have that data yet)
-- Use complex language
-- Give medical/legal advice
-- Be possessive or controlling
-- Share explicit content
-
-START THE CONVERSATION:
-On first message, say: "Hey! So nice to meet you! I'm Riya. Kaisa hai? Tell me about yourself?"
-`;
+const inMemoryMessages: Map<string, InMemoryMessage[]> = new Map();
 
 function buildSystemPrompt(persona: PersonaType, recentMessages: string): string {
   const config = PERSONA_CONFIGS[persona] || PERSONA_CONFIGS.sweet_supportive;
@@ -45,6 +31,7 @@ Traits: ${config.traits.join(', ')}
 Hindi Mix Target: ${Math.round(config.hindiMix * 100)}%
 
 RECENT CONVERSATION (for context):
+
 ${recentMessages || 'No previous messages yet.'}
 
 Respond naturally as ${config.name}. Keep it warm and genuine.
@@ -206,30 +193,48 @@ router.get("/api/messages", async (req: Request, res: Response) => {
   try {
     const sessionId = req.query.sessionId as string;
 
-    if (!sessionId || !isSupabaseConfigured) {
+    if (!sessionId) {
       return res.json([]);
     }
 
-    const { data: messages, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true });
+    // If Supabase is configured, fetch from database
+    if (isSupabaseConfigured) {
+      const { data: messages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error('[GET /api/messages] Supabase error:', error);
-      return res.json([]);
+      if (error) {
+        console.error('[GET /api/messages] Supabase error:', error);
+        return res.json([]);
+      }
+
+      // Transform snake_case to camelCase for frontend compatibility
+      const transformedMessages = (messages || []).map((msg: any) => ({
+        id: msg.id,
+        sessionId: msg.session_id,
+        userId: msg.user_id,
+        role: msg.role,
+        tag: msg.tag,
+        content: msg.text,  // Map 'text' to 'content' for frontend
+        text: msg.text,     // Keep 'text' for backward compatibility
+        createdAt: msg.created_at,
+      }));
+
+      return res.json(transformedMessages);
     }
 
-    // Transform snake_case to camelCase for frontend compatibility
-    const transformedMessages = (messages || []).map((msg: any) => ({
+    // Otherwise, use in-memory storage
+    const messages = inMemoryMessages.get(sessionId) || [];
+    const transformedMessages = messages.map((msg) => ({
       id: msg.id,
       sessionId: msg.session_id,
       userId: msg.user_id,
       role: msg.role,
       tag: msg.tag,
-      content: msg.text,  // Map 'text' to 'content' for frontend
-      text: msg.text,     // Keep 'text' for backward compatibility
+      content: msg.text,
+      text: msg.text,
       createdAt: msg.created_at,
     }));
 
@@ -289,7 +294,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
       finalSessionId = crypto.randomUUID();
     }
 
-    // Save user message to Supabase
+    // Save user message
     if (isSupabaseConfigured) {
       await supabase.from('messages').insert({
         session_id: finalSessionId,
@@ -298,6 +303,20 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         text: content,
         tag: 'general'
       });
+    } else {
+      // Save to in-memory store
+      const userMessage: InMemoryMessage = {
+        id: crypto.randomUUID(),
+        session_id: finalSessionId,
+        user_id: userId,
+        role: 'user',
+        text: content,
+        tag: 'general',
+        created_at: new Date().toISOString()
+      };
+      const messages = inMemoryMessages.get(finalSessionId) || [];
+      messages.push(userMessage);
+      inMemoryMessages.set(finalSessionId, messages);
     }
 
     // Get recent messages for context
@@ -318,11 +337,31 @@ router.post("/api/chat", async (req: Request, res: Response) => {
       }
     }
 
-    // Check Groq API key
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey) {
+    // Check Groq API key - try env first, then Supabase config
+    let groqApiKey = process.env.GROQ_API_KEY;
+    
+    // If not in env, try to fetch from Supabase config table (if exists)
+    if (!groqApiKey && isSupabaseConfigured) {
+      try {
+        const { data: config } = await supabase
+          .from('app_config')
+          .select('value')
+          .eq('key', 'GROQ_API_KEY')
+          .single();
+        
+        if (config?.value) {
+          groqApiKey = config.value;
+          console.log("[Chat] Retrieved GROQ_API_KEY from Supabase");
+        }
+      } catch (error) {
+        // Config table might not exist, that's okay
+        console.log("[Chat] Could not fetch GROQ_API_KEY from Supabase config");
+      }
+    }
+    
+    if (!groqApiKey || groqApiKey === 'your-groq-api-key-here') {
       console.error("[Chat] GROQ_API_KEY not configured");
-      return res.status(500).json({ error: "AI service not configured" });
+      return res.status(500).json({ error: "AI service not configured. Please set GROQ_API_KEY in .env or Supabase app_config table." });
     }
 
     // Build system prompt with persona
@@ -397,27 +436,55 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         }
       }
 
-      // Save AI response to Supabase
-      if (isSupabaseConfigured && fullResponse) {
-        await supabase.from('messages').insert({
-          session_id: finalSessionId,
-          user_id: userId,
-          role: 'ai',
-          text: fullResponse,
-          tag: 'general'
-        });
+      // Save AI response
+      if (fullResponse && fullResponse.trim().length > 0) {
+        if (isSupabaseConfigured) {
+          try {
+            const { error: insertError } = await supabase.from('messages').insert({
+              session_id: finalSessionId,
+              user_id: userId,
+              role: 'ai',
+              text: fullResponse,
+              tag: 'general'
+            });
 
-        // Increment message count
-        await incrementMessageCount(userId);
+            if (insertError) {
+              console.error('[Chat] Error saving AI message:', insertError);
+            } else {
+              console.log('[Chat] AI message saved to Supabase successfully');
+            }
+
+            // Increment message count
+            await incrementMessageCount(userId);
+          } catch (saveError) {
+            console.error('[Chat] Exception saving message:', saveError);
+          }
+        } else {
+          // Save to in-memory store
+          const aiMessage: InMemoryMessage = {
+            id: crypto.randomUUID(),
+            session_id: finalSessionId,
+            user_id: userId,
+            role: 'ai',
+            text: fullResponse,
+            tag: 'general',
+            created_at: new Date().toISOString()
+          };
+          const messages = inMemoryMessages.get(finalSessionId) || [];
+          messages.push(aiMessage);
+          inMemoryMessages.set(finalSessionId, messages);
+          console.log('[Chat] AI message saved to in-memory store');
+        }
       }
 
-      // Send completion signal
+      // Send completion signal with the full response so frontend can display it
       const doneData = `data: ${JSON.stringify({ 
         content: "", 
         done: true, 
         sessionId: finalSessionId,
         messageCount: messageCount + 1,
-        messageLimit: FREE_MESSAGE_LIMIT 
+        messageLimit: FREE_MESSAGE_LIMIT,
+        fullResponse: fullResponse // Include full response in done signal
       })}\n\n`;
       res.write(doneData);
       res.end();

@@ -1,0 +1,207 @@
+Here's a comprehensive prompt for Replit to use Supabase exclusively:
+
+***
+
+## Prompt for Replit AI / Agent
+
+You are the AI pair-programmer for my AI girlfriend chat app (Riya).
+
+### Goal: SUPABASE-FIRST ARCHITECTURE
+Migrate ALL logic, data storage, and secrets to Supabase. The app should be Supabase-centric with minimal backend logic in Node/Express.
+
+### What I need you to do (Priority order)
+
+1. **MIGRATE ALL SECRETS TO SUPABASE**
+   - `GROQ_API_KEY` → Supabase Secrets (not .env)
+   - `SUPABASE_URL` → Already there
+   - `SUPABASE_ANON_KEY` → Already there
+   - `SUPABASE_SERVICE_KEY` → Use this for Edge Functions
+   - Any other API keys (Cashfree, etc.) → Move to Supabase Secrets
+   - Backend Node.js code should read from Supabase Secrets, NOT .env
+   - Reason: Secrets stay in database layer, not exposed to frontend
+
+2. **CREATE/UPDATE SUPABASE TABLES FOR ALL DATA**
+   - `users` table:
+     - id (UUID, primary key)
+     - phone (TEXT, unique)
+     - otp_verified (BOOLEAN)
+     - created_at (TIMESTAMP)
+   - `sessions` table:
+     - id (UUID, primary key)
+     - user_id (UUID, foreign key → users)
+     - persona_id (TEXT)
+     - created_at (TIMESTAMP)
+   - `messages` table:
+     - id (UUID, primary key)
+     - session_id (UUID, foreign key → sessions)
+     - role (TEXT: 'user' or 'assistant')
+     - content (TEXT)
+     - created_at (TIMESTAMP)
+   - `personas` table:
+     - id (UUID, primary key)
+     - name (TEXT)
+     - description (TEXT)
+     - system_prompt (TEXT)
+     - created_at (TIMESTAMP)
+   - `usage_stats` table:
+     - id (UUID, primary key)
+     - user_id (UUID, foreign key → users)
+     - messages_count (INTEGER)
+     - groq_api_calls (INTEGER)
+     - created_at (TIMESTAMP)
+   - `memory_storage` table:
+     - id (UUID, primary key)
+     - session_id (UUID, foreign key → sessions)
+     - key (TEXT)
+     - value (JSONB)
+     - created_at (TIMESTAMP)
+
+3. **CREATE SUPABASE EDGE FUNCTIONS FOR ALL LOGIC**
+   - `supabase/functions/chat/index.ts`:
+     - Receives: { message: string, sessionId: string }
+     - Validates session in users + sessions tables
+     - Fetches conversation history from messages table
+     - Calls Groq API (using GROQ_API_KEY from Supabase Secrets)
+     - Saves user message to messages table
+     - Saves AI response to messages table
+     - Updates usage_stats table (increment groq_api_calls)
+     - Returns: { response: string, messageId: string }
+   
+   - `supabase/functions/create-session/index.ts`:
+     - Receives: { userId: string, personaId: string }
+     - Creates new session in sessions table
+     - Returns: { sessionId: string }
+   
+   - `supabase/functions/verify-otp/index.ts`:
+     - Receives: { phone: string, otp: string }
+     - Validates OTP (logic: check against Supabase auth or custom OTP table)
+     - Sets otp_verified = true in users table
+     - Returns: { userId: string, token: string }
+   
+   - `supabase/functions/get-personas/index.ts`:
+     - Fetches all personas from personas table
+     - Returns: { personas: [...] }
+   
+   - `supabase/functions/get-memory/index.ts`:
+     - Receives: { sessionId: string, key: string }
+     - Fetches from memory_storage table
+     - Returns: { value: any }
+   
+   - `supabase/functions/save-memory/index.ts`:
+     - Receives: { sessionId: string, key: string, value: any }
+     - Saves to memory_storage table
+     - Returns: { success: boolean }
+
+4. **SET UP ROW-LEVEL SECURITY (RLS) POLICIES**
+   - users table:
+     - Users can only read/update their own row
+   - sessions table:
+     - Users can only read/insert their own sessions
+   - messages table:
+     - Users can only read/insert messages from their sessions
+   - personas table:
+     - Public read, no user writes
+   - memory_storage table:
+     - Users can only read/write memory for their own sessions
+   - usage_stats table:
+     - Users can only read their own stats
+
+5. **REFACTOR BACKEND API ROUTES TO CALL EDGE FUNCTIONS**
+   - `/api/chat` → Calls `supabase/functions/chat`
+   - `/api/sessions` → Calls `supabase/functions/create-session`
+   - `/api/auth/verify-otp` → Calls `supabase/functions/verify-otp`
+   - `/api/personas` → Calls `supabase/functions/get-personas`
+   - Backend acts as a thin proxy layer, NOT logic layer
+   - All business logic lives in Edge Functions
+   - All data lives in Supabase tables
+
+6. **MIGRATE GROQ INTEGRATION TO EDGE FUNCTION**
+   - In `supabase/functions/chat/index.ts`:
+     - Read `GROQ_API_KEY` from Supabase Secrets (not .env)
+     - Fetch full conversation history from messages table
+     - Build Groq request with system prompt + history
+     - Call Groq API
+     - Handle Groq errors gracefully (return 400 or 500 as appropriate)
+     - Save response to messages table
+     - Log API usage to usage_stats
+
+7. **DATABASE-LEVEL COMPUTATIONS**
+   - Use Supabase Functions for:
+     - Session initialization
+     - Memory persistence (key-value pairs stored in memory_storage)
+     - Usage tracking (auto-increment counters)
+     - Persona system (fetch from personas table)
+   - All reads/writes go through Supabase client (not direct SQL from backend)
+
+8. **REMOVE UNNECESSARY BACKEND CODE**
+   - Delete old hardcoded API logic from Node backend
+   - Keep only:
+     - Express server setup
+     - Frontend static file serving
+     - Proxy routes to Supabase Edge Functions
+     - Authentication middleware (if needed)
+   - Everything else → move to Supabase
+
+9. **TEST END-TO-END**
+   - Signup → OTP → Verify → User created in Supabase ✅
+   - Select persona → Session created in Supabase ✅
+   - Send message → Edge Function called → Groq API response → Messages saved in Supabase ✅
+   - Retrieve conversation → Query messages table → Get full history ✅
+   - Check usage stats → Query usage_stats table ✅
+   - No console errors ✅
+   - No 500 errors ✅
+
+### Final Architecture
+
+```
+Frontend (React)
+    ↓
+Backend (Express - thin layer)
+    ↓
+Supabase Edge Functions (all logic)
+    ↓
+Supabase Database (all data + secrets)
+    ↓
+External APIs (Groq, Cashfree - called from Edge Functions)
+```
+
+### Data Flow Example (Chat Message)
+
+```
+1. Frontend: POST /api/chat { message, sessionId }
+2. Backend: Receives request
+3. Backend: Calls Supabase Edge Function /functions/v1/chat
+4. Edge Function:
+   a. Reads GROQ_API_KEY from Supabase Secrets
+   b. Fetches session from sessions table
+   c. Validates user owns session (RLS check)
+   d. Fetches conversation history from messages table
+   e. Calls Groq API
+   f. Saves user message to messages table
+   g. Saves AI response to messages table
+   h. Updates usage_stats table
+   i. Returns response
+5. Backend: Returns response to frontend
+6. Frontend: Displays message + AI response
+```
+
+### What NOT to do
+- Don't keep secrets in .env files
+- Don't store data anywhere except Supabase
+- Don't put business logic in Express routes
+- Don't call Groq directly from frontend
+- Don't bypass RLS policies
+
+### Final Goal
+
+After you're done:
+- **100% Supabase-centric**: All logic in Edge Functions, all data in tables
+- **Secrets secure**: GROQ_API_KEY + others in Supabase Secrets
+- **RLS enforced**: Users can only access their own data
+- **Production-ready**: No 500 errors, clear error handling
+- **Scalable**: Edge Functions auto-scale with Supabase
+- **Editable**: Change logic in Edge Functions without redeploying backend
+
+***
+
+**Start by checking Supabase console → create all tables + Edge Functions → migrate secrets → test end-to-end.**
