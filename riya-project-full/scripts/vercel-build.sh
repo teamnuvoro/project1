@@ -18,8 +18,10 @@ else
     exit 1
 fi
 
-echo "🔨 Running vite build with explicit config..."
-npx vite build --config ./vite.config.ts
+echo "🔨 Running vite build from client directory..."
+cd client
+npx vite build --outDir ../dist/public --emptyOutDir
+cd ..
 
 if [ $? -eq 0 ]; then
     echo "✅ Vite build succeeded!"
