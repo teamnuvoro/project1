@@ -12,6 +12,7 @@
     "build:dev": "vite build --mode development"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
     "@amplitude/analytics-browser": "^2.31.3",
     "@amplitude/analytics-node": "^1.5.26",
     "@deepgram/sdk": "^4.11.2",
@@ -121,7 +122,6 @@
     "@types/react-dom": "^18.3.1",
     "@types/twilio": "^3.19.2",
     "@types/ws": "^8.5.13",
-    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.25.0",
