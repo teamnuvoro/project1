@@ -36,6 +36,7 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
+  publicDir: "client/public",
   server: {
     host: "0.0.0.0",
     port: 5001,
