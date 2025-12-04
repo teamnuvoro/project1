@@ -18,6 +18,26 @@ app.use(ensureSecretsLoaded);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Debug Logging
+app.use((req, res, next) => {
+    console.log(`[Request] ${req.method} ${req.url}`);
+    next();
+});
+
+// Debug Endpoint
+app.get("/api/debug", (req, res) => {
+    res.json({
+        message: "Server is running",
+        url: req.url,
+        originalUrl: req.originalUrl,
+        headers: req.headers,
+        env: {
+            NODE_ENV: process.env.NODE_ENV,
+            HAS_SUPABASE: !!process.env.SUPABASE_URL
+        }
+    });
+});
+
 // Authentication routes (OTP-based signup/login)
 // Health check endpoint to verify environment variables
 app.get("/api/health", (req, res) => {
@@ -92,6 +112,22 @@ app.get("/api/auth/session", async (req, res) => {
         console.error("[/api/auth/session] Error:", error);
         res.status(500).json({ error: "Failed to get session" });
     }
+});
+
+// Catch-all for debugging 404s
+app.use("*", (req, res) => {
+    console.log(`[404] ${req.method} ${req.originalUrl} - No route matched`);
+    res.status(404).json({
+        error: "Route not found",
+        path: req.originalUrl,
+        method: req.method,
+        availableRoutes: [
+            "/api/auth/session",
+            "/api/auth/login",
+            "/api/debug",
+            "/api/health"
+        ]
+    });
 });
 
 export default app;
