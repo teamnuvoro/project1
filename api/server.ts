@@ -75,10 +75,10 @@ app.use(async (req, res, next) => {
 
 app.use(supabaseApiRoutes);
 app.use("/api", chatRoutes);
-app.use(callRoutes);
-app.use(summaryRoutes);
+app.use("/api/call", callRoutes);
+app.use("/api", summaryRoutes);
 app.use("/api/user-summary", userSummaryRoutes);
-app.use(paymentRoutes);
+app.use("/api/payment", paymentRoutes);
 app.use(transcribeRoutes);
 app.use(messagesHistoryRoutes);
 
