@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../supabase';
+import Vapi from '@vapi-ai/server-sdk';
 
 const router = Router();
 
@@ -19,18 +20,29 @@ interface CallSession {
 
 router.get('/api/call/config', async (req: Request, res: Response) => {
   try {
+    // Initialize Vapi
+    let vapi: any = null;
+    try {
+      if (process.env.VAPI_PRIVATE_KEY) {
+        vapi = new Vapi(process.env.VAPI_PRIVATE_KEY);
+      } else {
+        console.warn("[Vapi] VAPI_PRIVATE_KEY not found. Calls will fail.");
+      }
+    } catch (e) {
+      console.error("[Vapi] Failed to initialize:", e);
+    }
     const publicKey = process.env.VAPI_PUBLIC_KEY || process.env.VITE_VAPI_PUBLIC_KEY;
-    
+
     if (!publicKey) {
-      return res.status(503).json({ 
-        ready: false, 
-        error: 'Voice calling not configured' 
+      return res.status(503).json({
+        ready: false,
+        error: 'Voice calling not configured'
       });
     }
 
-    res.json({ 
+    res.json({
       ready: true,
-      publicKey 
+      publicKey
     });
   } catch (error: any) {
     console.error('[/api/call/config] Error:', error);
@@ -70,9 +82,9 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
     const FREE_LIMIT = 135;
 
     if (!isPremium && totalUsed >= FREE_LIMIT) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Call limit reached',
-        limitReached: true 
+        limitReached: true
       });
     }
 
@@ -90,7 +102,7 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[POST /api/call/start] Supabase error:', error);
-      
+
       return res.json({
         id: `local-${Date.now()}`,
         user_id: userId,
@@ -167,9 +179,9 @@ router.post('/api/call/end', async (req: Request, res: Response) => {
           user_id: userId,
           event_type: 'call_ended',
           call_session_id: callSession.id,
-          metadata: { 
+          metadata: {
             duration_seconds: durationSeconds,
-            end_reason: endReason 
+            end_reason: endReason
           }
         });
     }
@@ -253,7 +265,7 @@ router.post('/api/call/webhook', async (req: Request, res: Response) => {
 
       case 'call.ended':
         if (call?.id) {
-          const duration = call.endedAt && call.startedAt 
+          const duration = call.endedAt && call.startedAt
             ? Math.floor((new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000)
             : 0;
 

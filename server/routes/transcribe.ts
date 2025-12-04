@@ -15,20 +15,24 @@ const upload = multer({
 });
 
 // Initialize AssemblyAI client
-const assemblyAIApiKey = process.env.ASSEMBLYAI_API_KEY;
-
-if (!assemblyAIApiKey) {
-  console.warn('[Transcribe] AssemblyAI API key not configured. Speech-to-text will not work.');
+let client: AssemblyAI | null = null;
+try {
+  if (process.env.ASSEMBLYAI_API_KEY) {
+    client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY });
+  } else {
+    console.warn("[AssemblyAI] ASSEMBLYAI_API_KEY not found. Transcription will fail.");
+  }
+} catch (e) {
+  console.error("[AssemblyAI] Failed to initialize:", e);
 }
 
-const client = assemblyAIApiKey ? new AssemblyAI({ apiKey: assemblyAIApiKey }) : null;
 
 // POST /api/transcribe - Transcribe audio to text
 router.post('/api/transcribe', upload.single('audio'), async (req: Request, res: Response) => {
   try {
     if (!client) {
-      return res.status(503).json({ 
-        error: 'Speech-to-text service not configured. Please add ASSEMBLYAI_API_KEY to environment variables.' 
+      return res.status(503).json({
+        error: 'Speech-to-text service not configured. Please add ASSEMBLYAI_API_KEY to environment variables.'
       });
     }
 
@@ -55,7 +59,7 @@ router.post('/api/transcribe', upload.single('audio'), async (req: Request, res:
       }
 
       console.log('[Transcribe] Success:', transcript.text);
-      
+
       res.json({
         text: transcript.text || '',
         confidence: transcript.confidence,
@@ -64,15 +68,15 @@ router.post('/api/transcribe', upload.single('audio'), async (req: Request, res:
 
     } catch (transcribeError: any) {
       console.error('[Transcribe] Error during transcription:', transcribeError);
-      
+
       // Clean up file on error
       if (fs.existsSync(audioFilePath)) {
         fs.unlinkSync(audioFilePath);
       }
 
-      res.status(500).json({ 
-        error: 'Failed to transcribe audio', 
-        details: transcribeError.message 
+      res.status(500).json({
+        error: 'Failed to transcribe audio',
+        details: transcribeError.message
       });
     }
 

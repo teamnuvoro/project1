@@ -14,20 +14,25 @@ const upload = multer({
 });
 
 // Initialize Deepgram client
-const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
-
-if (!deepgramApiKey) {
-  console.warn('[Deepgram] API key not configured. Speech-to-text will not work.');
+// Initialize Deepgram
+let deepgram: any = null;
+try {
+  if (process.env.DEEPGRAM_API_KEY) {
+    deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+  } else {
+    console.warn("[Deepgram] DEEPGRAM_API_KEY not found. Transcription will fail.");
+  }
+} catch (e) {
+  console.error("[Deepgram] Failed to initialize:", e);
 }
 
-const deepgram = deepgramApiKey ? createClient(deepgramApiKey) : null;
 
 // POST /api/transcribe - Transcribe audio to text using Deepgram
 router.post('/api/transcribe', upload.single('audio'), async (req: Request, res: Response) => {
   try {
     if (!deepgram) {
-      return res.status(503).json({ 
-        error: 'Speech-to-text service not configured. Please add DEEPGRAM_API_KEY to environment variables.' 
+      return res.status(503).json({
+        error: 'Speech-to-text service not configured. Please add DEEPGRAM_API_KEY to environment variables.'
       });
     }
 
@@ -66,7 +71,7 @@ router.post('/api/transcribe', upload.single('audio'), async (req: Request, res:
       const confidence = result?.results?.channels?.[0]?.alternatives?.[0]?.confidence || 0;
 
       console.log('[Deepgram] Success:', transcript);
-      
+
       res.json({
         text: transcript,
         confidence: confidence,
@@ -75,15 +80,15 @@ router.post('/api/transcribe', upload.single('audio'), async (req: Request, res:
 
     } catch (transcribeError: any) {
       console.error('[Deepgram] Error during transcription:', transcribeError);
-      
+
       // Clean up file on error
       if (fs.existsSync(audioFilePath)) {
         fs.unlinkSync(audioFilePath);
       }
 
-      res.status(500).json({ 
-        error: 'Failed to transcribe audio', 
-        details: transcribeError.message 
+      res.status(500).json({
+        error: 'Failed to transcribe audio',
+        details: transcribeError.message
       });
     }
 
