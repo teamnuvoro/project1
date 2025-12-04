@@ -56,6 +56,8 @@ export async function setupVite(app: Express, server: Server) {
 
       // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
+      console.log('[Debug] Loaded index.html template. Includes client path?', template.includes('src="/client/src/main.tsx"'));
+      console.log('[Debug] Template content snippet:', template.substring(0, 200));
 
       // Try replacing the correct path first
       if (template.includes('src="/client/src/main.tsx"')) {
