@@ -4,20 +4,21 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, Sparkles, ArrowLeft, CheckCircle } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/lib/supabase";
 
 export default function SignupPageSimple() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { login } = useAuth();
-  
+
   // Step 1: Form data
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  
+
   // Step 2: OTP
   const [otp, setOtp] = useState("");
-  
+
   // UI state
   const [step, setStep] = useState<'form' | 'otp' | 'success'>('form');
   const [loading, setLoading] = useState(false);
@@ -26,7 +27,7 @@ export default function SignupPageSimple() {
   // STEP 1: Send OTP
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name || !email || !phone) {
       toast({
         title: "Missing Information",
@@ -37,49 +38,30 @@ export default function SignupPageSimple() {
     }
 
     setLoading(true);
-    
+
     try {
       let cleanPhone = phone.replace(/\s+/g, '');
       if (!cleanPhone.startsWith('+')) {
         cleanPhone = '+91' + cleanPhone;
       }
 
-      const response = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email,
-          phoneNumber: cleanPhone,
-        }),
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: cleanPhone,
+        options: {
+          data: {
+            name: name,
+            email: email,
+          }
+        }
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 409) {
-          toast({
-            title: "Account Exists",
-            description: "Please use the Login page instead",
-            variant: "destructive",
-          });
-          setTimeout(() => setLocation('/login'), 2000);
-          return;
-        }
-        throw new Error(data.error || "Failed to send OTP");
-      }
+      if (error) throw error;
 
       toast({
         title: "OTP Sent! 📱",
-        description: data.devMode 
-          ? `Dev Mode: OTP is ${data.otp}` 
-          : "Check your phone for the code",
+        description: "Check your phone for the code",
         duration: 8000,
       });
-
-      if (data.devMode && data.otp) {
-        setDevModeOTP(data.otp);
-      }
 
       setStep('otp');
     } catch (error: any) {
@@ -96,11 +78,7 @@ export default function SignupPageSimple() {
   // STEP 2: Verify OTP
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    console.log('[VERIFY] OTP Value:', otp);
-    console.log('[VERIFY] OTP Type:', typeof otp);
-    console.log('[VERIFY] OTP Length:', otp.length);
-    
+
     if (otp.length !== 6) {
       toast({
         title: "Invalid OTP",
@@ -111,44 +89,76 @@ export default function SignupPageSimple() {
     }
 
     setLoading(true);
-    
+
     try {
       let cleanPhone = phone.replace(/\s+/g, '');
       if (!cleanPhone.startsWith('+')) {
         cleanPhone = '+91' + cleanPhone;
       }
 
-      const response = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phoneNumber: cleanPhone,
-          otp: otp,
-        }),
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: cleanPhone,
+        token: otp,
+        type: 'sms',
       });
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (!response.ok) {
-        throw new Error(data.error || "Verification failed");
+      if (data.session) {
+        // Create user profile if it doesn't exist
+        const { error: profileError } = await supabase
+          .from('users')
+          .upsert({
+            id: data.session.user.id,
+            name: name,
+            email: email,
+            phone_number: cleanPhone,
+            gender: 'prefer_not_to_say',
+            persona: 'sweet_supportive',
+            premium_user: false,
+            onboarding_complete: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
+
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+          // Continue anyway, auth worked
+        }
+
+        // Initialize usage stats
+        await supabase
+          .from('usage_stats')
+          .insert({
+            user_id: data.session.user.id,
+            total_messages: 0,
+            total_call_seconds: 0,
+          })
+          .select()
+          .single(); // Ignore error if exists
+
+        // Update auth context
+        login({
+          id: data.session.user.id,
+          name,
+          email,
+          phone_number: cleanPhone,
+          premium_user: false,
+          gender: 'prefer_not_to_say',
+          persona: 'sweet_supportive',
+          onboarding_complete: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+        toast({
+          title: "Success! 🎉",
+          description: `Welcome ${name}!`,
+        });
+
+        setStep('success');
+        setTimeout(() => setLocation('/chat'), 2000);
       }
 
-      // Store session
-      if (data.sessionToken) {
-        localStorage.setItem('sessionToken', data.sessionToken);
-      }
-
-      // Update auth
-      login(data.user);
-
-      toast({
-        title: "Success! 🎉",
-        description: `Welcome ${data.user.name}!`,
-      });
-
-      setStep('success');
-      setTimeout(() => setLocation('/chat'), 2000);
-      
     } catch (error: any) {
       toast({
         title: "Verification Failed",
@@ -199,8 +209,8 @@ export default function SignupPageSimple() {
             <Sparkles className="inline-block w-6 h-6 ml-2 text-pink-500" />
           </h1>
           <p className="text-lg text-gray-600">
-            {step === 'form' 
-              ? 'Share your details to start' 
+            {step === 'form'
+              ? 'Share your details to start'
               : 'Enter the 6-digit code'}
           </p>
         </div>
