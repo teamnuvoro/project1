@@ -56,10 +56,20 @@ export async function setupVite(app: Express, server: Server) {
 
       // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/client/src/main.tsx"`,
-        `src="/client/src/main.tsx?v=${nanoid()}"`,
-      );
+
+      // Try replacing the correct path first
+      if (template.includes('src="/client/src/main.tsx"')) {
+        template = template.replace(
+          `src="/client/src/main.tsx"`,
+          `src="/client/src/main.tsx?v=${nanoid()}"`,
+        );
+      } else {
+        // Fallback for old path
+        template = template.replace(
+          `src="/src/main.tsx"`,
+          `src="/client/src/main.tsx?v=${nanoid()}"`,
+        );
+      }
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
