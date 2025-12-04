@@ -227,7 +227,7 @@ router.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
     }
 });
 
-// POST /api/auth/login - Login with phone number (Direct Login - No OTP)
+// POST /api/auth/login - Login with phone number (send OTP)
 router.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
         const { phoneNumber } = req.body;
@@ -247,7 +247,7 @@ router.post('/api/auth/login', async (req: Request, res: Response) => {
 
         const { data: user } = await supabase
             .from('users')
-            .select('id, name, email, phone_number, premium_user, onboarding_complete, persona')
+            .select('id, name, email, phone_number')
             .eq('phone_number', cleanPhone)
             .single();
 
@@ -258,24 +258,37 @@ router.post('/api/auth/login', async (req: Request, res: Response) => {
             });
         }
 
-        // DIRECT LOGIN - BYPASS OTP
-        // Create session
-        const sessionToken = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
+        // Generate OTP for login
+        const otp = generateOTP();
+        const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+        // Store OTP (for login, we store user info)
+        otpStore.set(cleanPhone, {
+            otp,
+            phoneNumber: cleanPhone,
+            email: user.email,
+            name: user.name,
+            expiresAt,
+            verified: false
+        });
+
+        // Send OTP via SMS
+        const sent = await sendOTPViaSMS(cleanPhone, otp);
+
+        if (!sent && twilioClient) {
+            return res.status(500).json({
+                error: 'Failed to send OTP. Please try again.'
+            });
+        }
 
         res.json({
             success: true,
-            message: 'Login successful',
-            directLogin: true, // Flag to tell frontend to skip OTP
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                phoneNumber: user.phone_number,
-                premiumUser: user.premium_user,
-                onboardingComplete: user.onboarding_complete,
-                persona: user.persona
-            },
-            sessionToken
+            message: twilioClient
+                ? 'OTP sent to your phone number'
+                : `OTP sent (Dev Mode): ${otp}`,
+            devMode: !twilioClient,
+            otp: !twilioClient ? otp : undefined,
+            userName: user.name
         });
 
     } catch (error: any) {

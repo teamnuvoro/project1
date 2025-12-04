@@ -18,7 +18,7 @@ export default function LoginPageSimple() {
   const [userName, setUserName] = useState("");
   const [devModeOTP, setDevModeOTP] = useState("");
 
-  // STEP 1: Send Login OTP (or Direct Login)
+  // STEP 1: Send Login OTP
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -59,27 +59,9 @@ export default function LoginPageSimple() {
           setTimeout(() => setLocation('/signup'), 2000);
           return;
         }
-        throw new Error(data.error || "Failed to login");
+        throw new Error(data.error || "Failed to send OTP");
       }
 
-      // Check for Direct Login (No OTP)
-      if (data.directLogin && data.sessionToken) {
-        // Store session
-        localStorage.setItem('sessionToken', data.sessionToken);
-
-        // Update auth
-        login(data.user);
-
-        toast({
-          title: "Welcome Back! 🎉",
-          description: `Hi ${data.user.name}!`,
-        });
-
-        setTimeout(() => setLocation('/chat'), 1000);
-        return;
-      }
-
-      // Fallback to OTP flow (if server reverts)
       toast({
         title: "OTP Sent! 📱",
         description: data.devMode
