@@ -1,15 +1,15 @@
 import "dotenv/config";
 import express from "express";
-import { ensureSecretsLoaded } from "./_lib/secrets";
-import chatRoutes from "./_lib/routes/chat";
-import supabaseApiRoutes from "./_lib/routes/supabase-api";
-import callRoutes from "./_lib/routes/call";
-import summaryRoutes from "./_lib/routes/summary";
-import userSummaryRoutes from "./_lib/routes/user-summary";
-import authRoutes from "./_lib/routes/auth";
-import paymentRoutes from "./_lib/routes/payment";
-import transcribeRoutes from "./_lib/routes/deepgram-transcribe";
-import messagesHistoryRoutes from "./_lib/routes/messages-history";
+import { ensureSecretsLoaded } from "../lib/secrets";
+import chatRoutes from "../lib/routes/chat";
+import supabaseApiRoutes from "../lib/routes/supabase-api";
+import callRoutes from "../lib/routes/call";
+import summaryRoutes from "../lib/routes/summary";
+import userSummaryRoutes from "../lib/routes/user-summary";
+import authRoutes from "../lib/routes/auth";
+import paymentRoutes from "../lib/routes/payment";
+import transcribeRoutes from "../lib/routes/deepgram-transcribe";
+import messagesHistoryRoutes from "../lib/routes/messages-history";
 
 const app = express();
 

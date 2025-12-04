@@ -1,9 +1,10 @@
 {
   "include": [
-    "client/src/**/*",
-    "shared/**/*",
-    "server/**/*",
-    "api/**/*"
+    "client/src",
+    "shared",
+    "server",
+    "api",
+    "lib"
   ],
   "exclude": [
     "node_modules",
