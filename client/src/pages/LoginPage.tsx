@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import { OTPInput } from "@/components/OTPInput";
+import { useAuth } from "@/contexts/AuthContext";
 
 const loginSchema = z.object({
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits"),
@@ -38,6 +39,10 @@ export default function LoginPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [userName, setUserName] = useState('');
   const [devModeOTP, setDevModeOTP] = useState<string | null>(null);
+
+  const { login } = useAuth(); // Import login from useAuth
+  const [otpHash, setOtpHash] = useState<string | null>(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -62,12 +67,19 @@ export default function LoginPage() {
     onSuccess: (data, variables) => {
       toast({
         title: "OTP Sent!",
-        description: data.devMode 
-          ? `Dev Mode: Your OTP is ${data.otp}` 
+        description: data.devMode
+          ? `Dev Mode: Your OTP is ${data.otp}`
           : "Check your phone for the verification code",
       });
       setPhoneNumber(variables.phoneNumber);
       setUserName(data.userName || '');
+
+      // Store hash and expiresAt for stateless verification
+      if (data.hash && data.expiresAt) {
+        setOtpHash(data.hash);
+        setOtpExpiresAt(data.expiresAt);
+      }
+
       if (data.devMode && data.otp) {
         setDevModeOTP(data.otp);
       }
@@ -95,9 +107,15 @@ export default function LoginPage() {
   // Verify Login OTP Mutation
   const verifyLoginOTPMutation = useMutation({
     mutationFn: async (data: OTPFormData) => {
+      if (!otpHash || !otpExpiresAt) {
+        throw new Error("Missing OTP verification data. Please request a new OTP.");
+      }
+
       const response = await apiRequest("POST", "/api/auth/verify-login-otp", {
         phoneNumber,
         otp: data.otp,
+        hash: otpHash,
+        expiresAt: otpExpiresAt
       });
       return response.json();
     },
@@ -106,19 +124,22 @@ export default function LoginPage() {
       if (data.sessionToken) {
         localStorage.setItem('sessionToken', data.sessionToken);
       }
-      
+
+      // Update Auth Context
+      login(data.user);
+
       toast({
         title: "Welcome Back! 🎉",
         description: `Hi ${data.user.name}! Let's continue chatting with Riya.`,
       });
-      
+
       // Redirect to chat
       setTimeout(() => setLocation('/chat'), 1500);
     },
     onError: (error: any) => {
       toast({
         title: "Verification Failed",
-        description: error.response?.data?.error || "Invalid OTP. Please try again.",
+        description: error.response?.data?.error || error.message || "Invalid OTP. Please try again.",
         variant: "destructive",
       });
     },
@@ -214,8 +235,8 @@ export default function LoginPage() {
             className="text-base sm:text-lg text-[#4a5565]"
             data-testid="text-login-subtitle"
           >
-            {step === 'phone' 
-              ? 'Login to continue your journey with Riya' 
+            {step === 'phone'
+              ? 'Login to continue your journey with Riya'
               : 'Enter the verification code sent to your phone'}
           </motion.p>
         </motion.div>

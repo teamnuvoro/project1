@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../supabase';
 import twilio from 'twilio';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -11,21 +12,25 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
 
 const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
 
-// In-memory OTP storage for development (use Redis in production)
-interface OTPRecord {
-    otp: string;
-    phoneNumber: string;
-    email: string;
-    name: string;
-    expiresAt: number;
-    verified: boolean;
-}
-
-const otpStore = new Map<string, OTPRecord>();
+// Secret for signing OTPs (use a stable secret in production)
+const OTP_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dev-secret-key-do-not-use-in-prod';
 
 // Generate 6-digit OTP
 function generateOTP(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Sign OTP details to create a hash
+function signOTP(phoneNumber: string, otp: string, expiresAt: number): string {
+    const data = `${phoneNumber}.${otp}.${expiresAt}`;
+    return crypto.createHmac('sha256', OTP_SECRET).update(data).digest('hex');
+}
+
+// Verify OTP hash
+function verifyOTPHash(phoneNumber: string, otp: string, expiresAt: number, hash: string): boolean {
+    if (Date.now() > expiresAt) return false;
+    const expectedHash = signOTP(phoneNumber, otp, expiresAt);
+    return expectedHash === hash;
 }
 
 // Send OTP via Twilio SMS
@@ -94,15 +99,8 @@ router.post('/api/auth/send-otp', async (req: Request, res: Response) => {
 
         console.log('[SEND OTP] Generated OTP:', otp, 'for phone:', cleanPhone);
 
-        // Store OTP
-        otpStore.set(cleanPhone, {
-            otp,
-            phoneNumber: cleanPhone,
-            email,
-            name,
-            expiresAt,
-            verified: false
-        });
+        // Generate Hash for Stateless Verification
+        const hash = signOTP(cleanPhone, otp, expiresAt);
 
         // Send OTP via SMS
         const sent = await sendOTPViaSMS(cleanPhone, otp);
@@ -119,7 +117,9 @@ router.post('/api/auth/send-otp', async (req: Request, res: Response) => {
                 ? 'OTP sent to your phone number'
                 : `OTP sent (Dev Mode): ${otp}`,
             devMode: !twilioClient,
-            otp: !twilioClient ? otp : undefined // Only show in dev mode
+            otp: !twilioClient ? otp : undefined, // Only show in dev mode
+            hash,
+            expiresAt
         });
 
     } catch (error: any) {
@@ -131,32 +131,20 @@ router.post('/api/auth/send-otp', async (req: Request, res: Response) => {
 // POST /api/auth/verify-otp - Verify OTP and create user
 router.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
     try {
-        const { phoneNumber, otp } = req.body;
+        const { phoneNumber, otp, hash, expiresAt, name, email } = req.body;
 
-        if (!phoneNumber || !otp) {
-            return res.status(400).json({ error: 'Phone number and OTP are required' });
+        if (!phoneNumber || !otp || !hash || !expiresAt || !name || !email) {
+            return res.status(400).json({ error: 'Missing required fields (phone, otp, hash, expiresAt, name, email)' });
         }
 
         const cleanPhone = phoneNumber.replace(/\s+/g, '');
-        const otpRecord = otpStore.get(cleanPhone);
 
-        if (!otpRecord) {
-            return res.status(400).json({ error: 'OTP not found. Please request a new one.' });
+        // Verify OTP Hash
+        const isValid = verifyOTPHash(cleanPhone, otp, Number(expiresAt), hash);
+
+        if (!isValid) {
+            return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         }
-
-        // Check if OTP expired
-        if (Date.now() > otpRecord.expiresAt) {
-            otpStore.delete(cleanPhone);
-            return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
-        }
-
-        // Verify OTP
-        if (otpRecord.otp !== otp) {
-            return res.status(400).json({ error: 'Invalid OTP. Please try again.' });
-        }
-
-        // Mark as verified
-        otpRecord.verified = true;
 
         // Create user in Supabase
         if (!isSupabaseConfigured) {
@@ -168,8 +156,8 @@ router.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
         const { data: newUser, error: createError } = await supabase
             .from('users')
             .insert({
-                name: otpRecord.name,
-                email: otpRecord.email,
+                name: name,
+                email: email,
                 phone_number: cleanPhone,
                 gender: 'prefer_not_to_say',
                 persona: 'sweet_supportive', // Default to Riya
@@ -200,9 +188,6 @@ router.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             });
-
-        // Clean up OTP
-        otpStore.delete(cleanPhone);
 
         // Create session (simplified - in production use proper JWT)
         const sessionToken = Buffer.from(`${newUser.id}:${Date.now()}`).toString('base64');
@@ -262,15 +247,8 @@ router.post('/api/auth/login', async (req: Request, res: Response) => {
         const otp = generateOTP();
         const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-        // Store OTP (for login, we store user info)
-        otpStore.set(cleanPhone, {
-            otp,
-            phoneNumber: cleanPhone,
-            email: user.email,
-            name: user.name,
-            expiresAt,
-            verified: false
-        });
+        // Generate Hash
+        const hash = signOTP(cleanPhone, otp, expiresAt);
 
         // Send OTP via SMS
         const sent = await sendOTPViaSMS(cleanPhone, otp);
@@ -288,7 +266,9 @@ router.post('/api/auth/login', async (req: Request, res: Response) => {
                 : `OTP sent (Dev Mode): ${otp}`,
             devMode: !twilioClient,
             otp: !twilioClient ? otp : undefined,
-            userName: user.name
+            userName: user.name,
+            hash,
+            expiresAt
         });
 
     } catch (error: any) {
@@ -300,28 +280,19 @@ router.post('/api/auth/login', async (req: Request, res: Response) => {
 // POST /api/auth/verify-login-otp - Verify OTP for login
 router.post('/api/auth/verify-login-otp', async (req: Request, res: Response) => {
     try {
-        const { phoneNumber, otp } = req.body;
+        const { phoneNumber, otp, hash, expiresAt } = req.body;
 
-        if (!phoneNumber || !otp) {
-            return res.status(400).json({ error: 'Phone number and OTP are required' });
+        if (!phoneNumber || !otp || !hash || !expiresAt) {
+            return res.status(400).json({ error: 'Missing required fields (phone, otp, hash, expiresAt)' });
         }
 
         const cleanPhone = phoneNumber.replace(/\s+/g, '');
-        const otpRecord = otpStore.get(cleanPhone);
 
-        if (!otpRecord) {
-            return res.status(400).json({ error: 'OTP not found. Please request a new one.' });
-        }
+        // Verify OTP Hash
+        const isValid = verifyOTPHash(cleanPhone, otp, Number(expiresAt), hash);
 
-        // Check if OTP expired
-        if (Date.now() > otpRecord.expiresAt) {
-            otpStore.delete(cleanPhone);
-            return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
-        }
-
-        // Verify OTP
-        if (otpRecord.otp !== otp) {
-            return res.status(400).json({ error: 'Invalid OTP. Please try again.' });
+        if (!isValid) {
+            return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         }
 
         // Get user from database
@@ -340,9 +311,6 @@ router.post('/api/auth/verify-login-otp', async (req: Request, res: Response) =>
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-
-        // Clean up OTP
-        otpStore.delete(cleanPhone);
 
         // Create session
         const sessionToken = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');

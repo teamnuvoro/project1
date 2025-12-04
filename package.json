@@ -129,8 +129,8 @@
     "@types/twilio": "^3.19.2",
     "@types/ws": "^8.5.13",
     "drizzle-kit": "^0.31.4",
-    "esbuild": "^0.25.0",
-    "tsx": "^4.20.5",
+    "esbuild": "^0.27.1",
+    "tsx": "^4.21.0",
     "typescript": "5.6.3"
   },
   "optionalDependencies": {

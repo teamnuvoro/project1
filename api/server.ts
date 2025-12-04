@@ -1,15 +1,15 @@
 import "dotenv/config";
 import express from "express";
-import { ensureSecretsLoaded } from "../lib/secrets";
-import chatRoutes from "../lib/routes/chat";
-import supabaseApiRoutes from "../lib/routes/supabase-api";
-import callRoutes from "../lib/routes/call";
-import summaryRoutes from "../lib/routes/summary";
-import userSummaryRoutes from "../lib/routes/user-summary";
-
-import paymentRoutes from "../lib/routes/payment";
-import transcribeRoutes from "../lib/routes/deepgram-transcribe";
-import messagesHistoryRoutes from "../lib/routes/messages-history";
+import { ensureSecretsLoaded } from "../server/secrets";
+import chatRoutes from "../server/routes/chat";
+import supabaseApiRoutes from "../server/routes/supabase-api";
+import callRoutes from "../server/routes/call";
+import summaryRoutes from "../server/routes/summary";
+import userSummaryRoutes from "../server/routes/user-summary";
+import authRoutes from "../server/routes/auth";
+import paymentRoutes from "../server/routes/payment";
+import transcribeRoutes from "../server/routes/deepgram-transcribe";
+import messagesHistoryRoutes from "../server/routes/messages-history";
 
 const app = express();
 
@@ -84,6 +84,7 @@ app.use((req, res, next) => {
     next();
 });
 
+app.use(authRoutes);
 app.use(supabaseApiRoutes);
 app.use(chatRoutes);
 app.use(callRoutes);

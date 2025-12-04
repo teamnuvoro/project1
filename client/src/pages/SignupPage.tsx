@@ -41,6 +41,8 @@ export default function SignupPage() {
   const [step, setStep] = useState<'form' | 'otp' | 'success'>('form');
   const [signupData, setSignupData] = useState<SignupFormData | null>(null);
   const [devModeOTP, setDevModeOTP] = useState<string | null>(null);
+  const [otpHash, setOtpHash] = useState<string | null>(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
 
   const signupForm = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -77,13 +79,20 @@ export default function SignupPage() {
     onSuccess: (data, variables) => {
       toast({
         title: "Verification Code Sent! 📱",
-        description: data.devMode 
-          ? `Dev Mode: Your OTP is ${data.otp}` 
+        description: data.devMode
+          ? `Dev Mode: Your OTP is ${data.otp}`
           : "Check your phone for the 6-digit code",
         duration: 5000,
       });
-      
+
       setSignupData(variables);
+
+      // Store hash and expiresAt for stateless verification
+      if (data.hash && data.expiresAt) {
+        setOtpHash(data.hash);
+        setOtpExpiresAt(data.expiresAt);
+      }
+
       if (data.devMode && data.otp) {
         setDevModeOTP(data.otp);
       }
@@ -112,7 +121,8 @@ export default function SignupPage() {
   const verifyOTPMutation = useMutation({
     mutationFn: async (data: OTPFormData) => {
       if (!signupData) throw new Error("No signup data");
-      
+      if (!otpHash || !otpExpiresAt) throw new Error("Missing OTP verification data. Please request a new OTP.");
+
       let cleanPhone = signupData.phoneNumber.replace(/\s+/g, '');
       if (!cleanPhone.startsWith('+')) {
         cleanPhone = '+91' + cleanPhone;
@@ -121,6 +131,10 @@ export default function SignupPage() {
       const response = await apiRequest("POST", "/api/auth/verify-otp", {
         phoneNumber: cleanPhone,
         otp: data.otp,
+        hash: otpHash,
+        expiresAt: otpExpiresAt,
+        name: signupData.name,
+        email: signupData.email
       });
       return response.json();
     },
@@ -140,14 +154,14 @@ export default function SignupPage() {
       });
 
       setStep('success');
-      
+
       // Redirect to chat after brief success screen
       setTimeout(() => setLocation('/chat'), 2000);
     },
     onError: (error: any) => {
       toast({
         title: "Verification Failed",
-        description: error.response?.data?.error || "Invalid OTP. Please try again.",
+        description: error.response?.data?.error || error.message || "Invalid OTP. Please try again.",
         variant: "destructive",
       });
     },
@@ -279,8 +293,8 @@ export default function SignupPage() {
             className="text-base sm:text-lg text-[#4a5565]"
             data-testid="text-signup-subtitle"
           >
-            {step === 'form' 
-              ? 'Share your details to start your journey' 
+            {step === 'form'
+              ? 'Share your details to start your journey'
               : 'Enter the 6-digit code sent to your phone'}
           </motion.p>
         </motion.div>
@@ -440,10 +454,10 @@ export default function SignupPage() {
                               console.log('[Signup OTP] String value:', otpString);
                               console.log('[Signup OTP] Length:', otpString.length);
                               console.log('[Signup OTP] Regex test /^\\d{6}$/:', /^\d{6}$/.test(otpString));
-                              
+
                               // Update form with STRING value
                               field.onChange(otpString);
-                              
+
                               // Clear error when 6 digits entered
                               if (otpString.length === 6 && /^\d{6}$/.test(otpString)) {
                                 console.log('[Signup OTP] Clearing errors - valid 6-digit OTP');
