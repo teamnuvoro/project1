@@ -24,7 +24,9 @@ export function ChatMessages({ messages, isLoading, isMobile, isTyping }: ChatMe
 
   const scrollToBottom = () => {
     if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      }, 100); // Small delay for smoother scroll after message animation
     }
   };
 
@@ -43,9 +45,13 @@ export function ChatMessages({ messages, isLoading, isMobile, isTyping }: ChatMe
     <div 
       ref={containerRef}
       onScroll={handleScroll}
-      className={`flex-1 overflow-y-auto ${isMobile ? 'px-3 py-4' : 'px-4 py-4'} bg-gradient-to-b from-purple-50/50 to-white`}
+      className="h-full w-full overflow-y-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 bg-gradient-to-b from-purple-50/30 via-pink-50/20 to-white"
+      style={{
+        scrollbarWidth: 'thin',
+        scrollbarColor: 'rgba(139, 92, 246, 0.3) transparent'
+      }}
     >
-      <div className="max-w-2xl mx-auto space-y-4">
+      <div className="max-w-2xl mx-auto w-full space-y-3 sm:space-y-4">
         {/* Relationship Tip Card */}
         {showTip && (
           <div className="tip-card mb-4 animate-bubble">

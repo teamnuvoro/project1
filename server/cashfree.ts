@@ -111,14 +111,15 @@ function validateCredentials(): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-interface CreateOrderParams {
+export interface CreateOrderParams {
   orderId: string;
   orderAmount: number;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
-  returnUrl: string;
+  returnUrl?: string;
   customerId?: string;
+  orderCurrency?: string;
 }
 
 interface CashfreeOrderResponse {
@@ -152,7 +153,7 @@ export async function createCashfreeOrder(params: CreateOrderParams): Promise<Ca
     const payload: Record<string, any> = {
       order_id: params.orderId,
       order_amount: params.orderAmount,
-      order_currency: "INR",
+      order_currency: params.orderCurrency || "INR",
       customer_details: {
         customer_id: params.customerId || params.customerEmail.replace(/[^a-zA-Z0-9_-]/g, "_"),
         customer_name: params.customerName,
@@ -160,7 +161,7 @@ export async function createCashfreeOrder(params: CreateOrderParams): Promise<Ca
         customer_phone: params.customerPhone,
       },
       order_meta: {
-        return_url: params.returnUrl,
+        return_url: params.returnUrl || `${process.env.BASE_URL || 'http://localhost:3000'}/payment/callback`,
       },
     };
 
@@ -389,4 +390,32 @@ export async function createCashfreePaymentLink(params: CreatePaymentLinkParams)
 
 export function getCashfreeModeForClient() {
   return cashfreeMode;
+}
+
+// Verify Cashfree webhook signature
+export function verifyCashfreeSignature(
+  rawBody: string,
+  timestamp: string,
+  signature: string
+): boolean {
+  const crypto = require('crypto');
+  const { secretKey } = getCredentials();
+  
+  if (!secretKey) {
+    console.error('[Cashfree Webhook] Secret key not configured');
+    return false;
+  }
+
+  try {
+    const signatureData = `${timestamp}${rawBody}`;
+    const expectedSignature = crypto
+      .createHmac('sha256', secretKey)
+      .update(signatureData)
+      .digest('base64');
+
+    return expectedSignature === signature;
+  } catch (error) {
+    console.error('[Cashfree Webhook] Signature verification error:', error);
+    return false;
+  }
 }

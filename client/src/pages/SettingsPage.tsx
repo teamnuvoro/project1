@@ -106,7 +106,7 @@ export default function SettingsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-background flex flex-col">
+        <div className="h-full w-full bg-background flex flex-col overflow-auto">
             {/* Header */}
             <header className="h-16 border-b bg-white/80 backdrop-blur-md sticky top-0 z-10 px-4 flex items-center gap-4">
                 <Button

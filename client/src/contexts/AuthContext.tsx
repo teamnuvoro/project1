@@ -90,12 +90,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const logout = () => {
-    analytics.track("logout");
-    analytics.reset();
-    queryClient.setQueryData(["/api/auth/session"], null);
-    queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
-    queryClient.clear();
+  const logout = async () => {
+    try {
+      console.log('🚪 Logging out...');
+      analytics.track("logout");
+      analytics.reset();
+      
+      // Call backend logout endpoint
+      await fetch('/api/auth/logout', { method: 'POST' });
+      
+      // Clear all query cache
+      queryClient.setQueryData(["/api/auth/session"], null);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
+      queryClient.clear();
+      
+      // Clear session storage
+      sessionStorage.clear();
+      
+      console.log('✅ Logged out successfully');
+      
+      // Redirect to landing page
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Force redirect anyway
+      window.location.href = '/';
+    }
   };
 
   // Handle auth disabled mode

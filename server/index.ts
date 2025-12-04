@@ -4,7 +4,13 @@ import { setupVite, serveStatic, log } from "./vite";
 import { Server } from "http";
 import chatRoutes from "./routes/chat";
 import supabaseApiRoutes from "./routes/supabase-api";
+import callRoutes from "./routes/call";
+import summaryRoutes from "./routes/summary";
+import userSummaryRoutes from "./routes/user-summary";
 import authRoutes from "./routes/auth";
+import paymentRoutes from "./routes/payment";
+import transcribeRoutes from "./routes/deepgram-transcribe";
+import messagesHistoryRoutes from "./routes/messages-history";
 
 const app = express();
 
@@ -12,46 +18,36 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Authentication routes (OTP-based signup/login)
+app.use(authRoutes);
+
 // Supabase API routes (user, sessions, messages, etc.)
 app.use(supabaseApiRoutes);
-
-// Auth routes
-app.use(authRoutes);
 
 // Chat routes (Groq AI)
 app.use(chatRoutes);
 
+// Call routes (Vapi voice calls)
+app.use(callRoutes);
+
+// Summary routes (relationship insights)
+app.use(summaryRoutes);
+
+// User summary routes (cumulative understanding)
+app.use("/api/user-summary", userSummaryRoutes);
+
+// Payment routes (Cashfree integration)
+app.use(paymentRoutes);
+
+// Transcribe routes (Deepgram speech-to-text)
+app.use(transcribeRoutes);
+
+// Messages history routes (for Memories page)
+app.use(messagesHistoryRoutes);
+
 // Health check
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-// Payment routes
-app.get("/api/payment/config", (_req, res) => {
-  res.json({
-    cashfreeMode: process.env.CASHFREE_MODE || "sandbox",
-    currency: "INR",
-    plans: { daily: 19, weekly: 49 }
-  });
-});
-
-app.post("/api/payment/create-order", async (req, res) => {
-  try {
-    const { planType } = req.body;
-
-    // Check if Cashfree credentials are configured
-    if (!process.env.CASHFREE_APP_ID || !process.env.CASHFREE_SECRET_KEY) {
-      return res.status(503).json({
-        error: "Payment service not configured. Please set up Cashfree credentials."
-      });
-    }
-
-    // TODO: Implement Cashfree order creation
-    res.status(503).json({ error: "Payment integration pending. Contact support." });
-  } catch (error: any) {
-    console.error("[Payment] Error creating order:", error);
-    res.status(500).json({ error: error.message || "Failed to create payment order" });
-  }
 });
 
 // User usage endpoint

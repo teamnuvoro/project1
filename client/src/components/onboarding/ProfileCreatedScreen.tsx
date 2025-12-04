@@ -3,10 +3,9 @@ import { CheckCircle } from "lucide-react";
 
 interface ProfileCreatedScreenProps {
   onComplete: () => void;
-  personaName?: string;
 }
 
-export function ProfileCreatedScreen({ onComplete, personaName = "Riya" }: ProfileCreatedScreenProps) {
+export function ProfileCreatedScreen({ onComplete }: ProfileCreatedScreenProps) {
   useEffect(() => {
     // Auto-transition after animation completes
     const timer = setTimeout(() => {
@@ -41,10 +40,10 @@ export function ProfileCreatedScreen({ onComplete, personaName = "Riya" }: Profi
         {/* Success Message */}
         <div className="text-center animate-fade-in-up">
           <h1 className="text-4xl text-gray-800 mb-4" style={{ animationDelay: "0.3s" }}>
-            You're All Set! ✨
+            Profile Created! ✨
           </h1>
           <p className="text-lg text-gray-700 leading-relaxed px-4" style={{ animationDelay: "0.5s" }}>
-            {personaName} is ready to chat with you
+            Select your companion now
           </p>
         </div>
 
@@ -79,7 +78,7 @@ export function ProfileCreatedScreen({ onComplete, personaName = "Riya" }: Profi
               transform: scale(1.2) rotate(10deg);
             }
             100% {
-              transform: scale(1) rotate(0);
+              transform: scale(1) rotate(0deg);
               opacity: 1;
             }
           }
@@ -127,4 +126,3 @@ export function ProfileCreatedScreen({ onComplete, personaName = "Riya" }: Profi
     </div>
   );
 }
-

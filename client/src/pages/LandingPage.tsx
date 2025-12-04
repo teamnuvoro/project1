@@ -1,77 +1,134 @@
 import { Link } from "wouter";
-import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
-import { Heart } from "lucide-react";
 
 export default function LandingPage() {
+  const mainImage = "/images/riya-landing-final.jpg";
+  const fallbackImage = "/images/riya-main.jpg";
+  
   return (
-    <div className="min-h-screen gradient-welcome flex flex-col items-center justify-between px-6 py-12">
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center text-center max-w-md mx-auto">
-        {/* Heart Icon */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="mb-10"
+    <div style={{ 
+      width: "100vw", 
+      height: "100vh", 
+      overflow: "hidden", 
+      position: "relative", 
+      background: "linear-gradient(135deg, #f5e6d3 0%, #e8d4c9 25%, #d4c3e0 50%, #c9d6e8 75%, #f5e6d3 100%)",
+      backgroundSize: "400% 400%",
+      animation: "gradientShift 20s ease infinite",
+      display: "flex", 
+      alignItems: "center", 
+      justifyContent: "center" 
+    }}>
+      {/* Animated background blobs - softer colors matching image */}
+      <div style={{
+        position: "absolute",
+        top: "-10%",
+        left: "-10%",
+        width: "120%",
+        height: "120%",
+        background: "radial-gradient(circle at 30% 50%, rgba(168, 85, 247, 0.15) 0%, transparent 60%), radial-gradient(circle at 70% 50%, rgba(236, 72, 153, 0.12) 0%, transparent 60%)",
+        filter: "blur(100px)",
+        animation: "float 25s ease-in-out infinite",
+        zIndex: 0
+      }} />
+
+      {/* BACKGROUND IMAGE - Scaled to show full image */}
+      <img
+        src={mainImage}
+        alt="Riya AI"
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          maxWidth: "108%",
+          maxHeight: "98vh",
+          width: "auto",
+          height: "auto",
+          objectFit: "contain",
+          objectPosition: "center center",
+          zIndex: 1,
+          display: "block",
+          borderRadius: "20px",
+          boxShadow: "0 30px 80px rgba(0,0,0,0.3)",
+          filter: "drop-shadow(0 20px 40px rgba(152, 16, 250, 0.2))"
+        }}
+        onLoad={() => console.log("✅ Image loaded successfully!")}
+        onError={(e) => {
+          console.log("⚠️ Using fallback image...");
+          e.currentTarget.src = fallbackImage;
+        }}
+      />
+
+      {/* Decorative floating elements */}
+      <div style={{
+        position: "absolute",
+        top: "10%",
+        left: "10%",
+        width: "100px",
+        height: "100px",
+        background: "rgba(255,255,255,0.1)",
+        borderRadius: "50%",
+        animation: "float 8s ease-in-out infinite",
+        zIndex: 0
+      }} />
+      <div style={{
+        position: "absolute",
+        bottom: "15%",
+        right: "12%",
+        width: "80px",
+        height: "80px",
+        background: "rgba(255,255,255,0.08)",
+        borderRadius: "50%",
+        animation: "float 10s ease-in-out infinite reverse",
+        zIndex: 0
+      }} />
+
+      {/* GET STARTED BUTTON - No animations, static */}
+      <Link href="/signup">
+        <button
+          style={{
+            position: "fixed",
+            bottom: "calc(8.5% - 33px)",
+            left: "50%",
+            marginLeft: "-160.5px",
+            width: "321px",
+            height: "83px",
+            background: "linear-gradient(90deg, #9810fa 0%, #f6339a 100%)",
+            border: "none",
+            cursor: "pointer",
+            borderRadius: "40px",
+            fontSize: "18px",
+            fontWeight: 800,
+            color: "#ffffff",
+            zIndex: 10,
+            boxShadow: "0 8px 24px rgba(152, 16, 250, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            letterSpacing: "0.3px",
+            textShadow: "0 2px 4px rgba(0,0,0,0.2)",
+            opacity: 1,
+            transition: "transform 0.2s ease, box-shadow 0.2s ease"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
+            e.currentTarget.style.boxShadow = "0 12px 32px rgba(152, 16, 250, 0.8)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "scale(1)";
+            e.currentTarget.style.boxShadow = "0 8px 24px rgba(152, 16, 250, 0.6)";
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = "scale(0.98)";
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          data-testid="button-get-started"
         >
-          <div className="w-28 h-28 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-300/50 animate-float">
-            <Heart className="w-14 h-14 text-white fill-white" />
-          </div>
-        </motion.div>
+          Let's Get Started
+        </button>
+      </Link>
 
-        {/* Title */}
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="text-4xl md:text-5xl font-bold text-foreground mb-6"
-          data-testid="text-welcome-title"
-        >
-          Welcome to Riya AI
-        </motion.h1>
-
-        {/* Subtitle */}
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="text-lg text-muted-foreground leading-relaxed mb-12"
-          data-testid="text-welcome-subtitle"
-        >
-          I'm here to help you understand relationships better and guide you toward meaningful companionship.
-        </motion.p>
-      </div>
-
-      {/* Bottom Buttons */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.4 }}
-        className="w-full max-w-md space-y-4"
-      >
-        <Link href="/signup">
-          <Button
-            size="lg"
-            className="w-full h-14 text-lg rounded-full gradient-primary-button text-white shadow-lg shadow-purple-400/30 hover:shadow-xl hover:shadow-purple-400/40 transition-all"
-            data-testid="button-get-started"
-          >
-            Let's Get Started
-          </Button>
-        </Link>
-
-        <p className="text-center text-muted-foreground">
-          Already have an account?{" "}
-          <Link href="/login">
-            <span 
-              className="text-foreground font-semibold underline underline-offset-2 cursor-pointer"
-              data-testid="link-login"
-            >
-              Login
-            </span>
-          </Link>
-        </p>
-      </motion.div>
     </div>
   );
 }
