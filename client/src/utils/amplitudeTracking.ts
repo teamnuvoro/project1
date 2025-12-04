@@ -2,10 +2,13 @@ import * as amplitude from '@amplitude/analytics-browser';
 
 // Initialize Amplitude (call this in App.tsx)
 export const initAmplitude = (apiKey: string) => {
+  if (!apiKey) {
+    console.warn("[Amplitude] API key not found. Analytics disabled.");
+    return;
+  }
   amplitude.init(apiKey, {
     trackingOptions: {
       ipAddress: true,
-      locale: true,
     },
   });
 };

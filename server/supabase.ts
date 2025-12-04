@@ -6,8 +6,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // In production, SUPABASE_SERVICE_ROLE_KEY is required
 if (isProduction && !supabaseServiceKey) {
-  console.error('[Supabase] ERROR: SUPABASE_SERVICE_ROLE_KEY is required in production');
-  process.exit(1);
+  console.error('[Supabase] ERROR: SUPABASE_SERVICE_ROLE_KEY is required in production. API calls will fail.');
+  // process.exit(1); // Don't crash the server, let it run so we can debug or serve static files
 }
 
 // In development, warn but continue with mock data
