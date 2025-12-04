@@ -114,12 +114,12 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
     console.log('[Payment] Order created:', orderData.orderId);
 
     console.log('[Payment] Order created successfully:', {
-      orderId: orderData.order_id,
+      order_id: orderData.order_id,
       paymentSessionId: orderData.payment_session_id
     });
 
     res.json({
-      orderId: orderData.order_id,
+      order_id: orderData.order_id,
       paymentSessionId: orderData.payment_session_id,
       amount,
       currency: 'INR',

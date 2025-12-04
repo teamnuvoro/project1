@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../supabase';
-import Vapi from '@vapi-ai/server-sdk';
+import { Vapi } from "@vapi-ai/server-sdk";
 
 const router = Router();
 
