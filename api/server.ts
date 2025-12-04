@@ -73,29 +73,30 @@ app.use(async (req, res, next) => {
     next();
 });
 
+// CORS Middleware
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 app.use(supabaseApiRoutes);
-app.use("/api", chatRoutes);
-app.use("/api/call", callRoutes);
-app.use("/api", summaryRoutes);
-app.use("/api/user-summary", userSummaryRoutes);
-app.use("/api/payment", paymentRoutes);
+app.use(chatRoutes);
+app.use(callRoutes);
+app.use(summaryRoutes);
+app.use("/api/user-summary", userSummaryRoutes); // This one is fine as is, or I can change it if I change the file.
+// user-summary.ts has relative paths /:userId etc. So mounting at /api/user-summary is correct.
+app.use(paymentRoutes);
 app.use(transcribeRoutes);
 app.use(messagesHistoryRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-// User usage endpoint
-app.post("/api/user/usage", async (_req, res) => {
-    res.json({
-        messageCount: 0,
-        callDuration: 0,
-        premiumUser: false,
-        messageLimitReached: false,
-        callLimitReached: false,
-    });
 });
 
 // Update user personality endpoint

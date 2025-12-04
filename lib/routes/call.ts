@@ -19,7 +19,7 @@ interface CallSession {
   metadata?: Record<string, any>;
 }
 
-router.get('/config', async (req: Request, res: Response) => {
+router.get('/api/call/config', async (req: Request, res: Response) => {
   try {
     // Initialize Vapi
     let vapi: any = null;
@@ -51,7 +51,7 @@ router.get('/config', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/start', async (req: Request, res: Response) => {
+router.post('/api/call/start', async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     const { vapiCallId, metadata } = req.body;
@@ -132,7 +132,7 @@ router.post('/start', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/end', async (req: Request, res: Response) => {
+router.post('/api/call/end', async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     const { sessionId, vapiCallId, durationSeconds, transcript, endReason } = req.body;
@@ -217,7 +217,7 @@ router.post('/end', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/history', async (req: Request, res: Response) => {
+router.get('/api/call/history', async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
 
@@ -244,7 +244,7 @@ router.get('/history', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/webhook', async (req: Request, res: Response) => {
+router.post('/api/call/webhook', async (req: Request, res: Response) => {
   try {
     const { type, call } = req.body;
 

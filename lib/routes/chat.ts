@@ -127,7 +127,7 @@ async function incrementMessageCount(userId: string): Promise<void> {
   }
 }
 
-router.post("/session", async (req: Request, res: Response) => {
+router.post("/api/session", async (req: Request, res: Response) => {
   try {
     const user = await getOrCreateDevUser();
     const userId = user?.id || DEV_USER_ID;
@@ -190,7 +190,7 @@ router.post("/session", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/messages", async (req: Request, res: Response) => {
+router.get("/api/messages", async (req: Request, res: Response) => {
   try {
     const sessionId = req.query.sessionId as string;
 
@@ -246,7 +246,7 @@ router.get("/messages", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/chat", async (req: Request, res: Response) => {
+router.post("/api/chat", async (req: Request, res: Response) => {
   try {
     const user = await getOrCreateDevUser();
     const { content, sessionId } = req.body;

@@ -385,7 +385,7 @@ async function updateBehaviorAnalytics(userId: string, behaviorData: any): Promi
 }
 
 // Update summary with specific values
-router.post("/summary/update", async (req: Request, res: Response) => {
+router.post("/api/summary/update", async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     if (!isSupabaseConfigured) {
@@ -418,7 +418,7 @@ router.post("/summary/update", async (req: Request, res: Response) => {
 });
 
 // Generate and save summary endpoint
-router.post("/summary/generate", async (req: Request, res: Response) => {
+router.post("/api/summary/generate", async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     if (!isSupabaseConfigured) {
@@ -463,7 +463,7 @@ router.post("/summary/generate", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/summary/latest", async (req: Request, res: Response) => {
+router.get("/api/summary/latest", async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     const autoGenerate = req.query.autoGenerate !== 'false';
@@ -564,7 +564,7 @@ router.get("/summary/latest", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/summary/stats", async (req: Request, res: Response) => {
+router.get("/api/summary/stats", async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     if (!isSupabaseConfigured) {
@@ -602,7 +602,7 @@ router.get("/summary/stats", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/analytics", async (req: Request, res: Response) => {
+router.get("/api/analytics", async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
     if (!isSupabaseConfigured) {

@@ -8,7 +8,7 @@ const router = Router();
 const DEV_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 // Get payment configuration
-router.get('/config', async (_req: Request, res: Response) => {
+router.get('/api/payment/config', async (_req: Request, res: Response) => {
   try {
     const config = getCashfreePlanConfig();
     res.json(config);
@@ -19,7 +19,7 @@ router.get('/config', async (_req: Request, res: Response) => {
 });
 
 // Create payment order
-router.post('/create-order', async (req: Request, res: Response) => {
+router.post('/api/payment/create-order', async (req: Request, res: Response) => {
   try {
     const { planType } = req.body as { planType: 'daily' | 'weekly' };
     const userId = (req as any).session?.userId || DEV_USER_ID;
@@ -138,7 +138,7 @@ router.post('/create-order', async (req: Request, res: Response) => {
 });
 
 // Verify payment status
-router.post('/verify', async (req: Request, res: Response) => {
+router.post('/api/payment/verify', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.body;
 
@@ -228,7 +228,7 @@ router.post('/verify', async (req: Request, res: Response) => {
 });
 
 // Cashfree webhook (for server-side notifications)
-router.post('/webhook', async (req: Request, res: Response) => {
+router.post('/api/payment/webhook', async (req: Request, res: Response) => {
   try {
     const signature = req.headers['x-webhook-signature'] as string;
     const timestamp = req.headers['x-webhook-timestamp'] as string;
