@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/lib/supabase";
 
 export default function LoginPageSimple() {
   const [, setLocation] = useLocation();
@@ -39,41 +40,17 @@ export default function LoginPageSimple() {
         cleanPhone = '+91' + cleanPhone;
       }
 
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phoneNumber: cleanPhone,
-        }),
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: cleanPhone,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          toast({
-            title: "No Account Found",
-            description: "Please sign up first",
-            variant: "destructive",
-          });
-          setTimeout(() => setLocation('/signup'), 2000);
-          return;
-        }
-        throw new Error(data.error || "Failed to send OTP");
-      }
+      if (error) throw error;
 
       toast({
         title: "OTP Sent! 📱",
-        description: data.devMode
-          ? `Dev Mode: OTP is ${data.otp}`
-          : "Check your phone for the code",
+        description: "Check your phone for the code",
         duration: 8000,
       });
-
-      setUserName(data.userName || '');
-      if (data.devMode && data.otp) {
-        setDevModeOTP(data.otp);
-      }
 
       setStep('otp');
     } catch (error: any) {
@@ -90,9 +67,6 @@ export default function LoginPageSimple() {
   // STEP 2: Verify Login OTP
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    console.log('[LOGIN VERIFY] OTP Value:', otp);
-    console.log('[LOGIN VERIFY] OTP Length:', otp.length);
 
     if (otp.length !== 6) {
       toast({
@@ -111,35 +85,21 @@ export default function LoginPageSimple() {
         cleanPhone = '+91' + cleanPhone;
       }
 
-      const response = await fetch("/api/auth/verify-login-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phoneNumber: cleanPhone,
-          otp: otp,
-        }),
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: cleanPhone,
+        token: otp,
+        type: 'sms',
       });
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (!response.ok) {
-        throw new Error(data.error || "Verification failed");
+      if (data.session) {
+        toast({
+          title: "Welcome Back! 🎉",
+          description: "Login successful",
+        });
+        setTimeout(() => setLocation('/chat'), 1500);
       }
-
-      // Store session
-      if (data.sessionToken) {
-        localStorage.setItem('sessionToken', data.sessionToken);
-      }
-
-      // Update auth
-      login(data.user);
-
-      toast({
-        title: "Welcome Back! 🎉",
-        description: `Hi ${data.user.name}!`,
-      });
-
-      setTimeout(() => setLocation('/chat'), 1500);
 
     } catch (error: any) {
       toast({

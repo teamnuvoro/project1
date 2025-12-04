@@ -1,4 +1,5 @@
-import { createContext, useContext, ReactNode, useEffect } from "react";
+import { createContext, useContext, ReactNode, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import { analytics } from "@/lib/analytics";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -32,62 +33,68 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Initialize analytics on mount
   useEffect(() => {
     analytics.initialize();
   }, []);
 
-  const { data: user, isLoading } = useQuery<User | null>({
-    queryKey: ["/api/auth/session"],
-    queryFn: async () => {
-      if (authDisabled) {
-        // In dev mode, return a mock user
-        return {
-          id: "dev",
-          name: "Dev User",
-          email: "dev@example.com",
-          premium_user: true,
-          gender: "male",
-          age: 25,
-          persona: "sweet_supportive",
-          onboarding_complete: false
-        } as User;
-      }
-      
-      const res = await fetch("/api/auth/session");
-      if (!res.ok) {
-        if (res.status === 401) return null;
-        return null;
-      }
-      const data = await res.json();
-      return data.user || null;
-    },
-    staleTime: Infinity,
-  });
-
-  // Track user when authenticated
   useEffect(() => {
-    if (user) {
-      analytics.identifyUser(user.id, {
-        name: user.name,
-        email: user.email,
-        gender: user.gender,
-        premium: user.premium_user,
-        age: user.age,
-      });
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setUser(null);
+        setIsLoading(false);
+        queryClient.clear();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+      } else {
+        setUser(data as User);
+        // Identify in analytics
+        analytics.identifyUser(data.id, {
+          name: data.name,
+          email: data.email,
+          gender: data.gender,
+          premium: data.premium_user,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [user]);
+  };
 
   const login = (userData: User) => {
-    queryClient.setQueryData(["/api/auth/session"], { user: userData });
+    setUser(userData);
     analytics.track("login_completed", { method: "manual" });
-    analytics.identifyUser(userData.id, {
-      name: userData.name,
-      email: userData.email,
-      gender: userData.gender,
-      premium: userData.premium_user,
-    });
   };
 
   const logout = async () => {
@@ -95,39 +102,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('🚪 Logging out...');
       analytics.track("logout");
       analytics.reset();
-      
-      // Call backend logout endpoint
-      await fetch('/api/auth/logout', { method: 'POST' });
-      
-      // Clear all query cache
-      queryClient.setQueryData(["/api/auth/session"], null);
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
+
+      await supabase.auth.signOut();
+
       queryClient.clear();
-      
-      // Clear session storage
       sessionStorage.clear();
-      
+
       console.log('✅ Logged out successfully');
-      
-      // Redirect to landing page
       window.location.href = '/';
     } catch (error) {
       console.error('Logout error:', error);
-      // Force redirect anyway
       window.location.href = '/';
     }
   };
 
-  // Handle auth disabled mode
-  const effectiveUser = authDisabled && !user ? { id: "dev", name: "Dev User" } as User : user;
-
   return (
     <AuthContext.Provider
       value={{
-        user: effectiveUser || null,
+        user,
         login,
         logout,
-        isAuthenticated: !!effectiveUser,
+        isAuthenticated: !!user,
         isLoading,
       }}
     >
