@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
+import { trackPaymentSuccessful, trackPaymentFailed } from "@/utils/amplitudeTracking";
 
 export default function PaymentCallback() {
   const [, setLocation] = useLocation();
@@ -19,26 +20,36 @@ export default function PaymentCallback() {
         if (!orderId) {
           setStatus('failed');
           setMessage('Invalid payment session');
+          trackPaymentFailed('missing_order_id');
           return;
         }
 
-        const response = await fetch(`/api/payment/verify/${orderId}`);
+        const response = await fetch('/api/payment/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId })
+        });
+
         const data = await response.json();
 
         if (data.success) {
           setStatus('success');
           setMessage('Payment successful! You now have unlimited access.');
-          
+
+          trackPaymentSuccessful(data.planType || 'unknown', data.endDate || '');
+
           // Invalidate user usage to refresh premium status
           queryClient.invalidateQueries({ queryKey: ['/api/user/usage'] });
         } else {
           setStatus('failed');
           setMessage('Payment verification failed. Please contact support if amount was deducted.');
+          trackPaymentFailed(data.message || 'verification_failed');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Payment verification error:', error);
         setStatus('failed');
         setMessage('An error occurred while verifying payment.');
+        trackPaymentFailed(error.message || 'network_error');
       }
     };
 
@@ -67,8 +78,8 @@ export default function PaymentCallback() {
             <CheckCircle className="w-16 h-16 mx-auto text-green-500" data-testid="icon-payment-success" />
             <h2 className="text-2xl font-bold text-green-600" data-testid="text-payment-status">Payment Successful!</h2>
             <p className="text-muted-foreground" data-testid="text-payment-message">{message}</p>
-            <Button 
-              onClick={handleContinue} 
+            <Button
+              onClick={handleContinue}
               className="w-full"
               data-testid="button-continue"
             >
@@ -82,9 +93,9 @@ export default function PaymentCallback() {
             <XCircle className="w-16 h-16 mx-auto text-destructive" data-testid="icon-payment-failed" />
             <h2 className="text-2xl font-bold text-destructive" data-testid="text-payment-status">Payment Failed</h2>
             <p className="text-muted-foreground" data-testid="text-payment-message">{message}</p>
-            <Button 
-              onClick={handleContinue} 
-              variant="outline" 
+            <Button
+              onClick={handleContinue}
+              variant="outline"
               className="w-full"
               data-testid="button-back"
             >

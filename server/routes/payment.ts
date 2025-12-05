@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { createCashfreeOrder, verifyCashfreeSignature } from '../cashfree';
 import { supabase, isSupabaseConfigured } from '../supabase';
-import { getCashfreePlanConfig } from '../config';
+import { getCashfreePlanConfig, getCashfreeBaseUrl } from '../config';
 
 const router = Router();
 
@@ -198,6 +198,9 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
       success: isPaid,
       status: paymentStatus,
       orderId,
+      planType: subscription.plan_type,
+      startDate: subscription.start_date,
+      endDate: subscription.end_date,
       message: isPaid ? 'Payment successful! You are now a premium user.' : 'Payment pending or failed'
     });
 

@@ -8,6 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { analytics } from "@/lib/analytics";
+import { trackPlanSelected } from "@/utils/amplitudeTracking";
 
 interface PaywallSheetProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
     try {
       setIsProcessing(true);
       analytics.track("checkout_started", { plan: planType, amount: planAmounts[planType] });
+      trackPlanSelected(planType, planAmounts[planType], planType === 'daily' ? 1 : 7);
 
       // Create payment order
       const orderData = await createOrderMutation.mutateAsync(planType);
