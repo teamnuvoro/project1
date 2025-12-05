@@ -1,20 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Riya - Your AI Relationship Companion</title>
-    <meta name="description" content="Connect with Riya, your AI companion for relationship guidance and companionship. Get personalized advice and support in exploring what you're looking for in a romantic partner." />
-    <meta property="og:title" content="Riya - Your AI Relationship Companion" />
-    <meta property="og:description" content="Connect with Riya, your AI companion for relationship guidance and companionship." />
-    <meta property="og:type" content="website" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  </head>
-  <body>
-    <div id="root"></div>
-    <script defer src="https://sdk.cashfree.com/js/ui/2.0.0/cashfree.prod.js"></script>
-    <script type="module" src="/client/src/main.tsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <title>Riya - Your AI Relationship Companion</title>
+  <meta name="description"
+    content="Connect with Riya, your AI companion for relationship guidance and companionship. Get personalized advice and support in exploring what you're looking for in a romantic partner." />
+  <meta property="og:title" content="Riya - Your AI Relationship Companion" />
+  <meta property="og:description"
+    content="Connect with Riya, your AI companion for relationship guidance and companionship." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Meta Pixel Code -->
+  <script>
+    !function (f, b, e, v, n, t, s) {
+      if (f.fbq) return; n = f.fbq = function () {
+        n.callMethod ?
+          n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+      };
+      if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+      n.queue = []; t = b.createElement(e); t.async = !0;
+      t.src = v; s = b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t, s)
+    }(window, document, 'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '806655239036874');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=806655239036874&ev=PageView&noscript=1" /></noscript>
+  <!-- End Meta Pixel Code -->
+
+</head>
+
+<body>
+  <div id="root"></div>
+  <script defer src="https://sdk.cashfree.com/js/ui/2.0.0/cashfree.prod.js"></script>
+  <script type="module" src="/client/src/main.tsx"></script>
+</body>
+
 </html>
