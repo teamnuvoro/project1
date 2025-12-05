@@ -129,8 +129,11 @@ async function incrementMessageCount(userId: string): Promise<void> {
 
 router.post("/api/session", async (req: Request, res: Response) => {
   try {
-    const user = await getOrCreateDevUser();
-    const userId = user?.id || DEV_USER_ID;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
 
     if (!isSupabaseConfigured) {
       const devSessionId = crypto.randomUUID();
@@ -248,10 +251,27 @@ router.get("/api/messages", async (req: Request, res: Response) => {
 
 router.post("/api/chat", async (req: Request, res: Response) => {
   try {
-    const user = await getOrCreateDevUser();
-    const { content, sessionId } = req.body;
-    const userId = user?.id || DEV_USER_ID;
-    const userPersona = (user?.persona || 'sweet_supportive') as PersonaType;
+    const { content, sessionId, userId } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User unauthorized" });
+    }
+
+    // Fetch actual user details
+    let userPersona: PersonaType = 'sweet_supportive';
+    let user: any = null;
+
+    if (isSupabaseConfigured) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      user = userData;
+      if (userData?.persona) {
+        userPersona = userData.persona as PersonaType;
+      }
+    }
 
     // Validate input
     if (!content || typeof content !== "string") {
