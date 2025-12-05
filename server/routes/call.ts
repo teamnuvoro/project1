@@ -24,7 +24,7 @@ router.get('/api/call/config', async (req: Request, res: Response) => {
     let vapi: any = null;
     try {
       if (process.env.VAPI_PRIVATE_KEY) {
-        vapi = new Vapi(process.env.VAPI_PRIVATE_KEY);
+        vapi = new (Vapi as any)(process.env.VAPI_PRIVATE_KEY);
       } else {
         console.warn("[Vapi] VAPI_PRIVATE_KEY not found. Calls will fail.");
       }
