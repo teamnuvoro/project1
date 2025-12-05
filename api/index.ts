@@ -152,7 +152,7 @@ app.get("/api/auth/session", async (req, res) => {
 
 // Serve static files from the React app build directory
 import path from "path";
-const clientBuildPath = path.join(__dirname, "../client/dist");
+const clientBuildPath = path.join(__dirname, "public");
 app.use(express.static(clientBuildPath));
 
 // For any other request, send back index.html (SPA routing)
