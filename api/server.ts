@@ -142,8 +142,18 @@ app.use("*", (req, res) => {
             "/api/auth/session",
             "/api/auth/login",
             "/api/debug",
-            "/api/health"
+            "/api/health",
+            "/api/test-chat"
         ]
+    });
+});
+
+// Add a simple test route to verify the server is running and reachable
+app.post("/api/test-chat", (req, res) => {
+    console.log("[Test Chat] Endpoint hit!");
+    res.json({
+        message: "Backend is reachable!",
+        timestamp: new Date().toISOString()
     });
 });
 
