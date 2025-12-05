@@ -22,6 +22,7 @@ import LandingPage from "@/pages/LandingPage";
 import SignupPage from "@/pages/SignupPageSimple";
 import LoginPage from "@/pages/LoginPageSimple";
 import NotFound from "@/pages/not-found";
+import { analytics } from "@/lib/analytics";
 
 const authDisabled =
   import.meta.env.VITE_DISABLE_AUTH?.toString().toLowerCase() === "true";
@@ -70,11 +71,11 @@ function FullScreenLayout({ children }: { children: React.ReactNode }) {
 function Router() {
   const { user, isAuthenticated } = useAuth();
   const [location] = useLocation();
-  
+
   // Check if route needs top navbar layout
   const navbarRoutes = ['/chat', '/call', '/summary', '/analytics', '/settings', '/memories', '/gallery', '/history', '/payment/callback'];
   const needsNavbar = navbarRoutes.some(route => location.startsWith(route));
-  
+
   const content = (
     <Switch>
       {/* Landing/Auth Routes - No Sidebar */}
@@ -133,22 +134,41 @@ function Router() {
   if (needsNavbar && isAuthenticated) {
     return <MainLayout>{content}</MainLayout>;
   }
-  
+
   return <FullScreenLayout>{content}</FullScreenLayout>;
 }
 
 function App() {
   useEffect(() => {
-    // Initialize Amplitude with your API key
-    // Get your API key from: https://amplitude.com/
-    const amplitudeApiKey = import.meta.env.VITE_AMPLITUDE_API_KEY;
-    
-    if (amplitudeApiKey) {
-      initAmplitude(amplitudeApiKey);
-      console.log('[Amplitude] ✅ Initialized successfully');
-    } else {
-      console.warn('[Amplitude] ⚠️ API key not found. Add VITE_AMPLITUDE_API_KEY to .env');
-    }
+    // Initialize custom analytics
+    analytics.initialize();
+
+    // Global click tracker
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Try to find a meaningful name or ID
+      const elementId = target.id || target.getAttribute('data-testid');
+      const elementText = target.innerText?.substring(0, 50);
+      const tagName = target.tagName;
+
+      // Only track clicks on interactive elements or if they have an ID
+      if (['BUTTON', 'A', 'INPUT', 'SELECT'].includes(tagName) || elementId || target.closest('button') || target.closest('a')) {
+        analytics.track('click', {
+          elementId,
+          elementText,
+          tagName,
+          x: e.clientX,
+          y: e.clientY,
+          path: window.location.pathname
+        });
+      }
+    };
+
+    window.addEventListener('click', handleClick);
+
+    return () => {
+      window.removeEventListener('click', handleClick);
+    };
   }, []);
 
   return (

@@ -10,6 +10,7 @@ import authRoutes from "../server/routes/auth";
 import paymentRoutes from "../server/routes/payment";
 import transcribeRoutes from "../server/routes/deepgram-transcribe";
 import messagesHistoryRoutes from "../server/routes/messages-history";
+import analyticsEventsRoutes from "../server/routes/analytics-events";
 
 const app = express();
 
@@ -110,9 +111,12 @@ app.use(callRoutes);
 app.use(summaryRoutes);
 app.use("/api/user-summary", userSummaryRoutes); // This one is fine as is, or I can change it if I change the file.
 // user-summary.ts has relative paths /:userId etc. So mounting at /api/user-summary is correct.
+// ... (existing imports)
+
 app.use(paymentRoutes);
 app.use(transcribeRoutes);
 app.use(messagesHistoryRoutes);
+app.use(analyticsEventsRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

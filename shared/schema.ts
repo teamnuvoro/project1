@@ -535,3 +535,23 @@ export const expressSessions = pgTable("session", {
   sess: jsonb("sess").notNull(),
   expire: timestamp("expire", { precision: 6 }).notNull(),
 });
+
+// User Events Table (for custom analytics)
+export const userEvents = pgTable("user_events", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+  sessionId: text("session_id"), // Can be a string ID if not linked to a backend session yet
+  eventType: text("event_type").notNull(),
+  eventName: text("event_name").notNull(),
+  eventProperties: jsonb("event_properties"),
+  path: text("path"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertUserEventSchema = createInsertSchema(userEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertUserEvent = z.infer<typeof insertUserEventSchema>;
+export type UserEvent = typeof userEvents.$inferSelect;
