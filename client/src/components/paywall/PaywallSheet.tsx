@@ -41,10 +41,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
 
   const planAmounts = paymentConfig?.plans ?? { daily: 19, weekly: 49 };
 
-  const cashfreeMode =
-    paymentConfig?.cashfreeMode ||
-    import.meta.env.VITE_CASHFREE_MODE ||
-    (import.meta.env.DEV ? "sandbox" : "production");
+  const cashfreeMode = "production";
 
   const createOrderMutation = useMutation({
     mutationFn: async (planType: 'daily' | 'weekly') => {
@@ -105,7 +102,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
 
     } catch (error: any) {
       console.error('Payment error:', error);
-      
+
       // Extract error message from various formats
       let errorMessage = "Failed to initiate payment";
       if (error?.message) {
@@ -125,7 +122,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
           errorMessage = msg;
         }
       }
-      
+
       toast({
         title: "Payment Error",
         description: errorMessage,
