@@ -52,6 +52,7 @@ app.get("/api/health", (req, res) => {
             VAPI_KEY: !!process.env.VAPI_PRIVATE_KEY,
             CASHFREE_ID: !!process.env.CASHFREE_APP_ID,
             AMPLITUDE_KEY: !!process.env.VITE_AMPLITUDE_API_KEY,
+            GEMINI_KEY: !!process.env.GEMINI_API_KEY,
         },
         timestamp: new Date().toISOString()
     });
