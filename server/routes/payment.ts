@@ -103,7 +103,7 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
           plan_type: planType,
           amount: amount,
           currency: 'INR',
-          cashfree_order_id: orderData.orderId,
+          cashfree_order_id: orderData.order_id,
           status: 'pending',
           started_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
@@ -111,7 +111,7 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
         });
     }
 
-    console.log('[Payment] Order created:', orderData.orderId);
+    console.log('[Payment] Order created:', orderData.order_id);
 
     console.log('[Payment] Order created successfully:', {
       orderId: orderData.order_id,

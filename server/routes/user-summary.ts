@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../supabase';
-import { 
-  calculateUnderstandingLevel, 
+import {
+  calculateUnderstandingLevel,
   getUnderstandingProgression,
   getNextSessionIncrement,
   UNDERSTANDING_CONSTANTS
@@ -73,16 +73,16 @@ const DEV_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 function verifyAccess(req: Request, requestedUserId: string): boolean {
   const sessionUserId = (req as any).session?.userId;
-  
+
   if (!sessionUserId) {
     console.log('[user-summary] No session auth, allowing access (dev mode)');
     return true;
   }
-  
+
   if (sessionUserId === requestedUserId) {
     return true;
   }
-  
+
   console.log(`[user-summary] Access denied: session user ${sessionUserId} != requested ${requestedUserId}`);
   return false;
 }
@@ -239,7 +239,7 @@ router.get('/:userId/progression', async (req: Request, res: Response) => {
     let tempSession = sessionCount;
     while (tempLevel < UNDERSTANDING_CONSTANTS.MAX_LEVEL && sessionsToMax < 100) {
       tempSession++;
-      tempLevel = calculateUnderstandingLevel(tempSession);
+      tempLevel = calculateUnderstandingLevel(tempSession) as number;
       sessionsToMax++;
     }
 
