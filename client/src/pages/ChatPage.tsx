@@ -358,46 +358,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-full w-full max-w-full bg-white overflow-hidden relative">
-      {/* Floating Amplitude Analytics Button */}
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('🔒 Lock button clicked! Opening password prompt...');
-          setAmplitudePasswordOpen(true);
-        }}
-        className="flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300"
-        style={{
-          position: 'fixed',
-          bottom: '100px',
-          right: '24px',
-          width: '56px',
-          height: '56px',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          borderRadius: '50%',
-          border: '3px solid white',
-          cursor: 'pointer',
-          fontSize: '24px',
-          zIndex: 9999,
-          pointerEvents: 'auto',
-        }}
-        title="Open Amplitude Dashboard (Password Protected)"
-        data-testid="amplitude-lock-button"
-      >
-        🔒
-      </button>
-
-      {/* Amplitude Password Modal */}
-      <AmplitudePasswordModal
-        isOpen={amplitudePasswordOpen}
-        onClose={() => setAmplitudePasswordOpen(false)}
-        onSuccess={() => {
-          console.log('✅ Password correct! Opening Amplitude...');
-          window.open('https://app.amplitude.com/analytics/silent-math-691128', '_blank');
-        }}
-      />
-
+    <div className="flex flex-col h-[100dvh] w-full max-w-full bg-white overflow-hidden relative">
       {/* Exit Intent Modal */}
       <ExitIntentModal
         isOpen={showExitModal}
@@ -415,7 +376,7 @@ export default function ChatPage() {
       </div>
 
       {/* Fixed Input at Bottom - Responsive */}
-      <div className="flex-shrink-0 w-full">
+      <div className="flex-shrink-0 w-full z-20 bg-white">
         <ChatInput
           onSendMessage={handleSendMessage}
           isLoading={sendMessageMutation.isPending || isTyping}
@@ -427,8 +388,6 @@ export default function ChatPage() {
       </div>
 
       <PaywallSheet open={paywallOpen} onOpenChange={setPaywallOpen} />
-
-      {/* Add CSS for pulse animation */}
 
     </div>
   );
