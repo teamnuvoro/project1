@@ -209,7 +209,8 @@ export default function CallPage() {
 
       stopTimer();
     };
-  }, [callConfig, toast, endCallMutation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callConfig?.publicKey]);
 
   const startTimer = useCallback(() => {
     console.log('[Timer] Starting timer...');
