@@ -56,9 +56,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
       const scriptId = 'cashfree-sdk';
       const existingScript = document.getElementById(scriptId);
 
-      const src = mode === "sandbox"
-        ? "https://sdk.cashfree.com/js/ui/2.0.0/cashfree.sandbox.js"
-        : "https://sdk.cashfree.com/js/ui/2.0.0/cashfree.prod.js";
+      const src = "https://sdk.cashfree.com/js/v3/cashfree.js";
 
       if (existingScript && (existingScript as HTMLScriptElement).src === src) {
         resolve(true);
@@ -95,7 +93,11 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
         throw new Error('Failed to create payment session');
       }
 
-      // Initialize Cashfree SDK
+      // Initialize Cashfree SDK v3
+      if (!window.Cashfree) {
+        throw new Error("Cashfree SDK failed to load");
+      }
+
       const cashfree = new window.Cashfree({
         mode: cashfreeMode,
       });
