@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics";
 
 const actionItems = [
   { title: "Voice Call", url: "/call", icon: Phone },
@@ -149,6 +150,12 @@ export function TopNavbar() {
           {/* Gallery Button with NEW Badge */}
           <Link href="/gallery">
             <button
+              onClick={() => {
+                analytics.track('navbar_click', {
+                  destination: 'gallery',
+                  user_type: user?.premium_user ? 'premium' : 'free'
+                });
+              }}
               className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-full transition-all duration-300 flex items-center gap-2 border border-white/20 relative group"
               title="Private Gallery"
             >

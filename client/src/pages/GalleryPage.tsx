@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { ChatHeader } from "@/components/chat/ChatHeader";
+import { analytics } from "@/lib/analytics";
 
 // Mock Data for the Gallery Item
 const SNAP_DATA = {
@@ -23,6 +24,12 @@ export default function GalleryPage() {
 
     const handleUnlock = () => {
         console.log("Payment Triggered for Snap:", SNAP_DATA.id);
+
+        analytics.track('unlock_attempt', {
+            item: SNAP_DATA.id,
+            price: SNAP_DATA.price,
+            source: 'gallery_blur'
+        });
 
         // Simulate payment delay
         setTimeout(() => {
@@ -149,8 +156,8 @@ export default function GalleryPage() {
                         {/* Status Badge (Top Left) */}
                         <div className="absolute top-4 left-4">
                             <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border ${isUnlocked
-                                    ? "bg-green-500/20 border-green-500/30 text-green-300"
-                                    : "bg-pink-500/20 border-pink-500/30 text-pink-300 animate-pulse"
+                                ? "bg-green-500/20 border-green-500/30 text-green-300"
+                                : "bg-pink-500/20 border-pink-500/30 text-pink-300 animate-pulse"
                                 }`}>
                                 {isUnlocked ? "Unlocked" : "Premium"}
                             </div>

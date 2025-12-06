@@ -180,9 +180,31 @@ export default function CallPage() {
     }
 
     return () => {
+      console.log("Cleaning up voice call...");
+
+      // 1. Stop Vapi
       if (vapiRef.current) {
         vapiRef.current.stop();
       }
+
+      // 2. Stop the Microphone (Browser Native)
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        stream.getTracks().forEach(track => track.stop());
+      }).catch(() => { });
+
+      // 3. Stop the AI Speech (Browser Native)
+      window.speechSynthesis.cancel();
+
+      // 4. Stop any HTML Audio elements
+      const audioElements = document.querySelectorAll('audio');
+      audioElements.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+
       stopTimer();
     };
   }, [callConfig, toast, endCallMutation]);
@@ -196,20 +218,12 @@ export default function CallPage() {
 
         if (!userUsage?.premiumUser && totalWithSession >= FREE_CALL_LIMIT_SECONDS) {
           analytics.track("voice_call_ended", { duration: newSessionDuration, reason: "limit_reached" });
-          setTimeout(() => {
-            if (callSessionIdRef.current) {
-              endCallMutation.mutate({
-                sessionId: callSessionIdRef.current,
-                durationSeconds: newSessionDuration,
-                endReason: 'limit_reached'
-              });
-            }
-            if (vapiRef.current) {
-              vapiRef.current.stop();
-            }
-            stopTimer();
-            setPaywallOpen(true);
-          }, 0);
+
+          // Trigger full shutdown
+          handleEndCall();
+
+          // Show paywall
+          setTimeout(() => setPaywallOpen(true), 100);
           return newSessionDuration;
         }
 
