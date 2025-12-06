@@ -13,6 +13,7 @@ interface ChatHeaderProps {
   onVoiceModeToggle?: () => void;
   onPaymentClick?: () => void;
   onAnalyzeClick?: () => void;
+  hideAnalytics?: boolean;
   userUsage?: {
     messageCount: number;
     callDuration: number;
@@ -22,7 +23,7 @@ interface ChatHeaderProps {
   };
 }
 
-export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onPaymentClick, onAnalyzeClick, userUsage: userUsageProp }: ChatHeaderProps) {
+export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onPaymentClick, onAnalyzeClick, hideAnalytics = false, userUsage: userUsageProp }: ChatHeaderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -51,14 +52,14 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
         {/* Left: Back button and Avatar */}
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 min-w-0">
           <Link href="/">
-            <button 
+            <button
               className="p-1.5 sm:p-2 hover:bg-white/20 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 backdrop-blur-sm flex-shrink-0"
               data-testid="button-back"
             >
               <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </Link>
-          
+
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden border-2 border-white/40 shadow-lg ring-2 ring-white/20 hover:ring-white/40 transition-all duration-300 hover:scale-105 flex-shrink-0">
               <img
@@ -79,24 +80,26 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
 
         {/* Right: Analyze My Type and Call icons */}
         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-          <Link href="/analytics">
-            <button 
-              className="px-2 sm:px-3 py-1 sm:py-1.5 bg-white/20 hover:bg-white/30 rounded-full transition-all duration-300 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium backdrop-blur-sm hover:scale-105 active:scale-95 shadow-md hover:shadow-lg"
-              data-testid="button-analyze-type"
-            >
-              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
-              <span className="hidden md:inline">Analyze My Type</span>
-            </button>
-          </Link>
+          {!hideAnalytics && (
+            <Link href="/analytics">
+              <button
+                className="px-2 sm:px-3 py-1 sm:py-1.5 bg-white/20 hover:bg-white/30 rounded-full transition-all duration-300 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium backdrop-blur-sm hover:scale-105 active:scale-95 shadow-md hover:shadow-lg"
+                data-testid="button-analyze-type"
+              >
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+                <span className="hidden md:inline">Analyze My Type</span>
+              </button>
+            </Link>
+          )}
           <Link href="/call">
-            <button 
+            <button
               className="p-1.5 sm:p-2 hover:bg-white/20 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 backdrop-blur-sm flex-shrink-0"
               data-testid="button-voice-call"
             >
               <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </Link>
-          <button 
+          <button
             className="p-1.5 sm:p-2 hover:bg-white/20 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 backdrop-blur-sm flex-shrink-0"
             onClick={onVoiceModeToggle}
             data-testid="button-video-call"

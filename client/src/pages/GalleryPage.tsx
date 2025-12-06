@@ -55,7 +55,7 @@ export default function GalleryPage() {
 
     return (
         <div className="flex flex-col min-h-screen bg-gray-900 text-gray-100 pb-20">
-            <ChatHeader />
+            <ChatHeader hideAnalytics={true} />
 
             <main className="flex-1 container max-w-5xl mx-auto p-4 md:p-6 space-y-6">
                 {/* Header Section */}
