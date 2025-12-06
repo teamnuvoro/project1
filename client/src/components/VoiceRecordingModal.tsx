@@ -8,7 +8,9 @@ interface VoiceRecordingModalProps {
   isTranscribing: boolean;
   transcript: string;
   onClose: () => void;
+  onClose: () => void;
   onSend: () => void;
+  onStartRecording?: () => void;
 }
 
 export function VoiceRecordingModal({
@@ -18,6 +20,7 @@ export function VoiceRecordingModal({
   transcript,
   onClose,
   onSend,
+  onStartRecording,
 }: VoiceRecordingModalProps) {
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -139,10 +142,10 @@ export function VoiceRecordingModal({
                     {/* Waveform Visualization */}
                     <div className="flex items-center justify-center gap-1 h-20 mb-4">
                       {[...Array(25)].map((_, i) => {
-                        const height = isRecording 
-                          ? Math.sin(audioLevel + i * 0.5) * 30 + 40 
+                        const height = isRecording
+                          ? Math.sin(audioLevel + i * 0.5) * 30 + 40
                           : 10;
-                        
+
                         return (
                           <motion.div
                             key={i}
@@ -277,14 +280,22 @@ export function VoiceRecordingModal({
                   </div>
                 )}
 
-                {/* Instructions */}
+                {/* Instructions & Start Button */}
                 {!transcript && !isRecording && !isTranscribing && (
-                  <div className="mt-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
-                    <p className="text-xs text-purple-700 text-center leading-relaxed">
-                      🎤 Speak clearly in Hindi, English, or Hinglish
-                      <br />
-                      Click the mic button to start recording
-                    </p>
+                  <div className="mt-6 flex flex-col items-center gap-4">
+                    <button
+                      onClick={onStartRecording}
+                      className="w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
+                    >
+                      <Mic className="w-8 h-8 text-white" />
+                    </button>
+                    <div className="p-4 bg-purple-50 rounded-xl border border-purple-100 w-full">
+                      <p className="text-xs text-purple-700 text-center leading-relaxed">
+                        🎤 Speak clearly in Hindi, English, or Hinglish
+                        <br />
+                        Click the mic button to start recording
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
