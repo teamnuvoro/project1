@@ -212,27 +212,48 @@ export default function CallPage() {
   }, [callConfig, toast, endCallMutation]);
 
   const startTimer = useCallback(() => {
+    console.log('[Timer] Starting timer...');
+    if (timerRef.current) clearInterval(timerRef.current);
+
     timerRef.current = setInterval(() => {
       setSessionDuration(prev => {
         const newSessionDuration = prev + 1;
         sessionDurationRef.current = newSessionDuration;
-        const totalWithSession = totalUsedSeconds + newSessionDuration;
 
-        if (!userUsage?.premiumUser && totalWithSession >= FREE_CALL_LIMIT_SECONDS) {
+        // Calculate total time used including this session
+        const currentTotal = (userUsage?.callDuration || 0) + newSessionDuration;
+        const isPremium = !!userUsage?.premiumUser;
+        const timeLimit = FREE_CALL_LIMIT_SECONDS;
+
+        console.log(`[Timer] Tick: ${newSessionDuration}s | Total: ${currentTotal}s | Limit: ${timeLimit}s | Premium: ${isPremium}`);
+
+        // HARD LIMIT CHECK
+        if (!isPremium && currentTotal >= timeLimit) {
+          console.log('[Timer] 🛑 LIMIT REACHED! Ending call now.');
+
+          // Track event
           analytics.track("voice_call_ended", { duration: newSessionDuration, reason: "limit_reached" });
 
-          // Trigger full shutdown
+          // Force Stop Vapi Audio *Immediately*
+          if (vapiRef.current) {
+            vapiRef.current.setMuted(true);
+            vapiRef.current.stop();
+          }
+
+          // Trigger Full UI Shutdown
           handleEndCall();
 
-          // Show paywall
+          // Show Paywall
           setTimeout(() => setPaywallOpen(true), 100);
+
           return newSessionDuration;
         }
 
-        if (!userUsage?.premiumUser && totalWithSession === WARNING_THRESHOLD_SECONDS) {
+        // Warning Toast
+        if (!isPremium && currentTotal === WARNING_THRESHOLD_SECONDS) {
           toast({
             title: "Time's running out...",
-            description: "Your free call will end soon",
+            description: "Your free call will end in a few seconds.",
             duration: 5000,
           });
         }
@@ -240,7 +261,7 @@ export default function CallPage() {
         return newSessionDuration;
       });
     }, 1000);
-  }, [userUsage, totalUsedSeconds, toast, endCallMutation]);
+  }, [userUsage, toast]);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
