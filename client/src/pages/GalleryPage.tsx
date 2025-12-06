@@ -101,7 +101,7 @@ export default function GalleryPage() {
                                 >
                                     <div className="w-full max-w-[280px] bg-gray-900/90 border border-white/10 backdrop-blur-md rounded-xl p-6 flex flex-col items-center text-center gap-4 shadow-xl transform transition-all hover:scale-105 duration-300">
                                         <div className="p-3 bg-pink-500/20 rounded-full text-pink-400">
-                                            <Lock className="w-6 h-6" />
+                                            <Lock className="w-4 h-4" />
                                         </div>
 
                                         <div className="space-y-1">

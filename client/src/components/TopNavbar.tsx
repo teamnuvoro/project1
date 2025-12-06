@@ -9,6 +9,7 @@ import {
   Crown,
   Image as ImageIcon,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
@@ -98,96 +99,115 @@ export function TopNavbar() {
             </button>
 
             {/* Dropdown Menu Content */}
-            {isDropdownOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsDropdownOpen(false)}
-                />
+            <AnimatePresence>
+              {isDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-black/5 backdrop-blur-[1px]"
+                    onClick={() => setIsDropdownOpen(false)}
+                  />
 
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-xl z-50 border border-gray-200 overflow-hidden py-1">
-
-                  {/* Relationship Profile */}
-                  <Link href="/summary">
-                    <button className="w-full px-4 py-3 text-left text-gray-700 hover:bg-pink-50 transition-colors flex items-center gap-3">
-                      <div className="text-pink-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></div>
-                      <span className="font-medium">Relationship Profile</span>
-                    </button>
-                  </Link>
-
-                  {/* Premium */}
-                  <button
-                    onClick={() => {
-                      setIsDropdownOpen(false);
-                      const paywallEvent = new CustomEvent('openPaywall');
-                      window.dispatchEvent(paywallEvent);
-                    }}
-                    className="w-full px-4 py-3 text-left text-gray-700 hover:bg-yellow-50 transition-colors flex items-center gap-3"
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="absolute right-0 top-full mt-3 w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl z-50 border border-white/40 overflow-hidden py-2 ring-1 ring-black/5"
                   >
-                    <Crown className="w-4 h-4 text-yellow-600" />
-                    <span className="font-medium">Upgrade to Premium</span>
-                  </button>
+                    {/* Relationship Profile */}
+                    <Link href="/summary">
+                      <button className="w-full px-4 py-3 text-left text-gray-700 hover:bg-pink-50 transition-colors flex items-center gap-3 group">
+                        <div className="text-pink-500 p-2 bg-pink-100 rounded-full group-hover:bg-pink-200 transition-colors">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                        </div>
+                        <span className="font-medium text-sm">Relationship Profile</span>
+                      </button>
+                    </Link>
 
-                  {/* Gallery */}
-                  <Link href="/gallery">
+                    {/* Premium */}
                     <button
                       onClick={() => {
-                        analytics.track('navbar_click', {
-                          destination: 'gallery',
-                          user_type: user?.premium_user ? 'premium' : 'free'
-                        });
                         setIsDropdownOpen(false);
+                        const paywallEvent = new CustomEvent('openPaywall');
+                        window.dispatchEvent(paywallEvent);
                       }}
-                      className="w-full px-4 py-3 text-left text-gray-700 hover:bg-purple-50 transition-colors flex items-center gap-3"
+                      className="w-full px-4 py-3 text-left text-gray-700 hover:bg-yellow-50 transition-colors flex items-center gap-3 group"
                     >
-                      <ImageIcon className="w-4 h-4 text-purple-600" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Private Gallery</span>
-                        <span className="text-[10px] text-purple-500 font-bold uppercase">New Content</span>
+                      <div className="p-2 bg-yellow-100 rounded-full group-hover:bg-yellow-200 transition-colors">
+                        <Crown className="w-4 h-4 text-yellow-600" />
                       </div>
+                      <span className="font-medium text-sm">Upgrade to Premium</span>
                     </button>
-                  </Link>
 
-                  {/* Memories */}
-                  <Link href="/memories">
+                    {/* Gallery */}
+                    <Link href="/gallery">
+                      <button
+                        onClick={() => {
+                          analytics.track('navbar_click', {
+                            destination: 'gallery',
+                            user_type: user?.premium_user ? 'premium' : 'free'
+                          });
+                          setIsDropdownOpen(false);
+                        }}
+                        className="w-full px-4 py-3 text-left text-gray-700 hover:bg-purple-50 transition-colors flex items-center gap-3 group"
+                      >
+                        <div className="p-2 bg-purple-100 rounded-full group-hover:bg-purple-200 transition-colors">
+                          <ImageIcon className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm">Private Gallery</span>
+                          <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wide">New Content</span>
+                        </div>
+                      </button>
+                    </Link>
+
+                    <div className="h-px bg-gray-100 my-1 mx-4"></div>
+
+                    {/* Memories */}
+                    <Link href="/memories">
+                      <button
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="w-full px-4 py-3 text-left text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-3 group"
+                      >
+                        <div className="p-2 bg-gray-100 rounded-full group-hover:bg-gray-200 transition-colors">
+                          <Video className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <span className="font-medium text-sm">Memories</span>
+                      </button>
+                    </Link>
+
+                    {/* Settings */}
+                    <Link href="/settings">
+                      <button
+                        onClick={() => setIsDropdownOpen(false)}
+                        className="w-full px-4 py-3 text-left text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-3 group"
+                      >
+                        <div className="p-2 bg-gray-100 rounded-full group-hover:bg-gray-200 transition-colors">
+                          <Settings className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <span className="font-medium text-sm">Settings</span>
+                      </button>
+                    </Link>
+
+                    <div className="h-px bg-gray-100 my-1 mx-4"></div>
+
+                    {/* Logout */}
                     <button
-                      onClick={() => setIsDropdownOpen(false)}
-                      className="w-full px-4 py-3 text-left text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
+                      onClick={handleLogout}
+                      className="w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3 group"
                     >
-                      <Video className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium">Memories</span>
+                      <div className="p-2 bg-red-50 rounded-full group-hover:bg-red-100 transition-colors">
+                        <LogOut className="w-4 h-4" />
+                      </div>
+                      <span className="font-medium text-sm">Logout</span>
                     </button>
-                  </Link>
-
-                  {/* Settings */}
-                  <Link href="/settings">
-                    <button
-                      onClick={() => setIsDropdownOpen(false)}
-                      className="w-full px-4 py-3 text-left text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-3"
-                    >
-                      <Settings className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium">Settings</span>
-                    </button>
-                  </Link>
-
-                  <div className="h-px bg-gray-100 my-1"></div>
-
-                  {/* Logout */}
-                  <button
-                    onClick={handleLogout}
-                    className="w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span className="font-medium">Logout</span>
-                  </button>
-                </div>
-              </>
-            )}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
-
-      {/* Add custom CSS for the navbar */}
       <style>{`
         .navbar-gradient {
           background: linear-gradient(135deg, #8B4FB8 0%, #E94B9F 100%);
