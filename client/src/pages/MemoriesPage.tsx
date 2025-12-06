@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { Link } from 'wouter';
 import { ArrowLeft, MessageCircle, Calendar, Clock, Loader2 } from 'lucide-react';
-import { format, formatDistanceToNow, isToday, isYesterday, isSameDay, parseISO } from 'date-fns';
+import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Message {
   id: string;
@@ -19,17 +20,19 @@ interface GroupedMessages {
   dateLabel: string;
   messages: Message[];
 }
-
 export default function MemoriesPage() {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const { user } = useAuth();
 
   // Fetch all messages for the user
   const { data: messages = [], isLoading, error } = useQuery<Message[]>({
-    queryKey: ['/api/messages/all'],
+    queryKey: ['/api/messages/all', user?.id],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/messages/all');
+      if (!user?.id) return [];
+      const response = await apiRequest('GET', `/api/messages/all?userId=${user.id}`);
       return response.json();
     },
+    enabled: !!user?.id,
   });
 
   // Group messages by day
@@ -61,7 +64,7 @@ export default function MemoriesPage() {
         return {
           date,
           dateLabel,
-          messages: msgs.sort((a, b) => 
+          messages: msgs.sort((a, b) =>
             new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
           ),
         };
@@ -221,11 +224,10 @@ export default function MemoriesPage() {
                                 {/* Message Bubble */}
                                 <div className="flex-1 max-w-[75%]">
                                   <div
-                                    className={`px-4 py-3 rounded-2xl ${
-                                      isUser
-                                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-tr-sm'
-                                        : 'bg-gray-100 text-gray-900 rounded-tl-sm'
-                                    }`}
+                                    className={`px-4 py-3 rounded-2xl ${isUser
+                                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-tr-sm'
+                                      : 'bg-gray-100 text-gray-900 rounded-tl-sm'
+                                      }`}
                                   >
                                     <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
                                       {message.content}

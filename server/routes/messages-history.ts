@@ -7,7 +7,13 @@ const DEV_USER_ID = '00000000-0000-0000-0000-000000000001';
 // GET /api/messages/all - Get all messages for the user across all sessions
 router.get('/api/messages/all', async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).session?.userId || DEV_USER_ID;
+    const userId = (req.query.userId as string) || (req as any).session?.userId;
+
+    if (!userId) {
+      // If no user ID provided, return empty array (Secure default)
+      // Do NOT fall back to DEV_USER_ID blindly
+      return res.json([]);
+    }
 
     if (!isSupabaseConfigured) {
       // Return empty array if Supabase is not configured
