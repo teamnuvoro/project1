@@ -27,7 +27,7 @@ export function ProtectedLayout({ children, showNavbar = true }: ProtectedLayout
 
     // 3. The "Vault" - Render Protected Content
     return (
-        <div className="flex flex-col h-screen w-full bg-background">
+        <div className="flex flex-col h-[100dvh] w-full bg-background">
             {showNavbar && <TopNavbar />}
             <div className="flex-1 overflow-hidden" style={{ marginTop: showNavbar ? '60px' : '0' }}>
                 {children}

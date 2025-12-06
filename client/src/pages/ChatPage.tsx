@@ -358,7 +358,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full max-w-full bg-white overflow-hidden relative">
+    <div className="flex flex-col h-full w-full max-w-full bg-white overflow-hidden relative">
       {/* Exit Intent Modal */}
       <ExitIntentModal
         isOpen={showExitModal}
