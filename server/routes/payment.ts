@@ -21,7 +21,9 @@ router.get('/api/payment/config', async (_req: Request, res: Response) => {
 // Create payment order
 router.post('/api/payment/create-order', async (req: Request, res: Response) => {
   try {
-    const { planType } = req.body;
+    const { planType, userId: reqUserId } = req.body;
+    // Prefer session user, fallback to request body (if auth middleware issue), then dev user
+    const userId = (req as any).session?.userId || reqUserId || DEV_USER_ID;
 
     // ⚠️ HARDCODED CREDENTIAL TEST (Temporary Debug)
     console.log("⚠️ RUNNING WITH HARDCODED PRODUCTION KEYS");
@@ -35,12 +37,6 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
     const secret = process.env.CASHFREE_SECRET_KEY;
     console.log(`🔑 Loading Keys: AppID ends in ...${appId?.slice(-4)}, Secret exists: ${!!secret}`);
 
-    /* 
-    if (!appId || !secret) {
-      throw new Error("Missing API Keys in Environment Variables");
-    }
-    */
-
     // 2. Setup Cashfree (Force Production via helper which uses environment vars)
     // Note: createCashfreeOrder helper automatically uses these env vars
 
@@ -53,6 +49,36 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
 
     console.log("🚀 Sending request to Cashfree:", { orderId, amount, phone: randomPhone });
 
+    // 4. INSERT SUBSCRIPTION RECORD BEFORE CALLING GATEWAY
+    // This is the critical fix. We must have a record to verify against later.
+    if (isSupabaseConfigured) {
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + (planType === 'weekly' ? 7 : 1));
+
+      const { error: insertError } = await supabase
+        .from('subscriptions')
+        .insert({
+          user_id: userId,
+          plan_type: planType,
+          amount: amount,
+          currency: 'INR',
+          status: 'pending',
+          cashfree_order_id: orderId,
+          start_date: startDate.toISOString(),
+          end_date: endDate.toISOString(),
+          created_at: new Date().toISOString()
+        });
+
+      if (insertError) {
+        console.error("❌ Failed to insert subscription record:", insertError);
+        throw new Error("Database Error: Could not create subscription record");
+      }
+      console.log("✅ Pending Subscription Created for User:", userId);
+    } else {
+      console.warn("⚠️ Database NOT configured. Skipping subscription insert (Mock Mode).");
+    }
+
     const orderData = await createCashfreeOrder({
       orderId: orderId,
       orderAmount: amount,
@@ -60,8 +86,8 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
       customerName: "Riya User",
       customerEmail: "user@riya.ai",
       customerPhone: randomPhone,
-      returnUrl: `${process.env.BASE_URL || 'https://riya-ai.site'}/payment/callback?orderId=${orderId}`,
-      customerId: "USER_" + Date.now()
+      returnUrl: `${process.env.v || 'https://riya-ai.site'}/payment/callback?orderId=${orderId}`,
+      customerId: userId
     });
 
     // 5. Check if we actually got data
@@ -87,7 +113,7 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
 
     console.log("✅ Session ID Generated:", sessionId);
 
-    res.json({ payment_session_id: sessionId });
+    res.json({ payment_session_id: sessionId, order_id: orderId }); // Return order_id too just in case
 
   } catch (error: any) {
     // 🛑 CAPTURE THE REAL ERROR

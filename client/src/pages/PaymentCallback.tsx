@@ -91,16 +91,32 @@ export default function PaymentCallback() {
         {status === 'failed' && (
           <>
             <XCircle className="w-16 h-16 mx-auto text-destructive" data-testid="icon-payment-failed" />
-            <h2 className="text-2xl font-bold text-destructive" data-testid="text-payment-status">Payment Failed</h2>
+            <h2 className="text-2xl font-bold text-destructive" data-testid="text-payment-status">Payment Verification Failed</h2>
             <p className="text-muted-foreground" data-testid="text-payment-message">{message}</p>
-            <Button
-              onClick={handleContinue}
-              variant="outline"
-              className="w-full"
-              data-testid="button-back"
-            >
-              Go Back
-            </Button>
+
+            <div className="space-y-3 pt-4">
+              <Button
+                onClick={() => window.location.reload()}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                data-testid="button-check-status"
+              >
+                Check Status & Re-login
+              </Button>
+
+              <Button
+                onClick={handleContinue}
+                variant="outline"
+                className="w-full"
+                data-testid="button-back"
+              >
+                Go Back
+              </Button>
+
+              <p className="text-xs text-muted-foreground pt-2">
+                Order ID: <span className="font-mono">{new URLSearchParams(window.location.search).get('orderId')}</span><br />
+                If money was deducted, <a href="mailto:support@riya.ai" className="underline text-blue-400">contact support</a>.
+              </p>
+            </div>
           </>
         )}
       </Card>
