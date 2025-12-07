@@ -50,10 +50,10 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
 
     console.log('[Payment] Generated Session:', orderData.payment_session_id);
 
-    // 4. Return Session ID to Frontend
+    // 4. Return Session ID to Frontend (Snake Case matching Prompt)
     res.json({
-      paymentSessionId: orderData.payment_session_id, // CamelCase for consistency with frontend
-      orderId: orderData.order_id,
+      payment_session_id: orderData.payment_session_id,
+      order_id: orderData.order_id,
       amount,
       currency: 'INR'
     });

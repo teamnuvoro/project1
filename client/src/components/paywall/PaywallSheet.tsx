@@ -92,7 +92,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
       console.log("🎟️ Received Order Data:", orderData);
 
       // 2. STOP if ID is missing
-      if (!orderData || !orderData.paymentSessionId) {
+      if (!orderData || !orderData.payment_session_id) {
         console.error("Backend Response missing session ID:", orderData);
         alert("Payment Error: Could not generate Session ID. Please try again.");
         setIsProcessing(false); // Reset processing on error
@@ -116,8 +116,8 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
 
       // 4. Open Checkout
       const checkoutOptions = {
-        paymentSessionId: orderData.paymentSessionId,
-        returnUrl: `${window.location.origin}/payment/callback?orderId=${orderData.orderId}`,
+        paymentSessionId: orderData.payment_session_id,
+        returnUrl: `${window.location.origin}/payment/callback?orderId=${orderData.order_id}`,
       };
 
       console.log("🚀 Opening Cashfree Checkout with options:", checkoutOptions);
