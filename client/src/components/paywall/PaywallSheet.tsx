@@ -86,49 +86,56 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
       analytics.track("checkout_started", { plan: planType, amount: planAmounts[planType] });
       trackPlanSelected(planType, planAmounts[planType], planType === 'daily' ? 1 : 7);
 
-      // Create payment order
+      // 1. Call backend to get Session ID (using mutateAsync to await result)
       const orderData = await createOrderMutation.mutateAsync(planType);
 
-      if (!orderData.paymentSessionId) {
-        throw new Error('Failed to create payment session');
+      console.log("🎟️ Received Order Data:", orderData);
+
+      // 2. STOP if ID is missing
+      if (!orderData || !orderData.paymentSessionId) {
+        console.error("Backend Response missing session ID:", orderData);
+        alert("Payment Error: Could not generate Session ID. Please try again.");
+        setIsProcessing(false); // Reset processing on error
+        return;
       }
 
-      // Initialize Cashfree SDK v3 (Factory function, no 'new' needed usually, but handles both)
+      // 3. Initialize SDK
       if (!window.Cashfree) {
         throw new Error("Cashfree SDK failed to load. Please check your internet connection.");
       }
-
       const cashfree = window.Cashfree({
         mode: cashfreeMode,
       });
 
       if (typeof cashfree.checkout !== 'function') {
-        console.error("Cashfree SDK loaded but checkout is missing. Possible AdBlocker interference.");
-        throw new Error("Payment initialization failed. Please disable your AdBlocker and try again.");
+        console.error("Cashfree SDK loaded but checkout is missing.");
+        alert("Payment Error: AdBlocker detected. Please disable it.");
+        setIsProcessing(false); // Reset processing on error
+        return;
       }
 
-      // Open checkout
+      // 4. Open Checkout
       const checkoutOptions = {
         paymentSessionId: orderData.paymentSessionId,
         returnUrl: `${window.location.origin}/payment/callback?orderId=${orderData.orderId}`,
       };
 
+      console.log("🚀 Opening Cashfree Checkout with options:", checkoutOptions);
+
       cashfree.checkout(checkoutOptions).then((result: any) => {
         if (result.error) {
+          console.error("User closed popup or failed:", result.error);
           toast({
             title: "Payment Failed",
             description: result.error.message || "Something went wrong with the payment",
             variant: "destructive",
           });
-          setIsProcessing(false);
-          return;
+          setIsProcessing(false); // Reset processing if user closes or error
         }
-
         if (result.redirect) {
-          // Payment redirect - user will be redirected to callback page
-          console.log("Payment redirect initiated");
+          console.log("Payment Redirecting...");
           // Don't verify here - it will be done in the callback page
-          setIsProcessing(false);
+          setIsProcessing(false); // Reset processing as user is redirected
         }
       }).catch((error: any) => {
         console.error('Cashfree checkout error:', error);

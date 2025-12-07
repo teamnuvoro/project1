@@ -104,6 +104,8 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
       paymentSessionId: orderData.payment_session_id
     });
 
+    console.log('[Payment] Generated Session:', orderData.payment_session_id);
+
     res.json({
       orderId: orderData.order_id,
       paymentSessionId: orderData.payment_session_id,
