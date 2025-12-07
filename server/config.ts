@@ -6,7 +6,8 @@ const SECRET_KEY = process.env.CASHFREE_SECRET_KEY || "";
 export const cashfreeMode = process.env.CASHFREE_ENV === "TEST" ? "sandbox" : "production";
 
 export function getCashfreeBaseUrl() {
-  return cashfreeMode === "production"
+  const currentMode = process.env.CASHFREE_ENV === "TEST" ? "sandbox" : "production";
+  return currentMode === "production"
     ? "https://api.cashfree.com/pg"
     : "https://sandbox.cashfree.com/pg";
 }

@@ -65,8 +65,8 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
           currency: 'INR',
           status: 'pending',
           cashfree_order_id: orderId,
-          start_date: startDate.toISOString(),
-          end_date: endDate.toISOString(),
+          started_at: startDate.toISOString(),
+          expires_at: endDate.toISOString(),
           created_at: new Date().toISOString()
         });
 
