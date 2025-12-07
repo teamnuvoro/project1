@@ -91,18 +91,19 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
 
       console.log("🎟️ Received Order Data:", orderData);
 
-      // 🛑 2. TRAP THE ERROR (Loud Frontend)
+      // 🛑 2. TRAP THE ERROR (The fix)
+      // If the server sent { error: true }, SHOW ME THE REASON.
       if (orderData.error) {
-        console.error("Backend Error:", orderData.message);
-        alert("PAYMENT FAILED: " + orderData.message);
+        console.error("Detailed Error:", orderData);
+        alert("⚠️ BACKEND FAILED: " + orderData.details);
         setIsProcessing(false);
-        return;
+        return; // Stop. Do not open the black screen.
       }
 
       // 3. Verify Session ID exists
       if (!orderData || !orderData.payment_session_id) {
         console.error("Backend Response missing session ID:", orderData);
-        alert("Critical Error: Backend returned empty Session ID.");
+        alert("⚠️ CRITICAL: Server returned empty Session ID.");
         setIsProcessing(false); // Reset processing on error
         return;
       }

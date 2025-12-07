@@ -22,21 +22,25 @@ router.get('/api/payment/config', async (_req: Request, res: Response) => {
 router.post('/api/payment/create-order', async (req: Request, res: Response) => {
   try {
     const { planType } = req.body;
-    const userId = (req as any).session?.userId || 'USER_123';
 
-    // 1. Force Production Environment & Validate Keys
-    if (!process.env.CASHFREE_APP_ID || !process.env.CASHFREE_SECRET_KEY) {
-      throw new Error("Missing Cashfree Credentials");
+    // 1. Log the keys (Masked) to prove they are loaded
+    const appId = process.env.CASHFREE_APP_ID;
+    const secret = process.env.CASHFREE_SECRET_KEY;
+    console.log(`🔑 Loading Keys: AppID ends in ...${appId?.slice(-4)}, Secret exists: ${!!secret}`);
+
+    if (!appId || !secret) {
+      throw new Error("Missing API Keys in Environment Variables");
     }
 
-    // 2. Generate unique Order ID
-    const orderId = `ORDER_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const amount = planType === 'weekly' ? 99 : 29; // Simple logic
+    // 2. Setup Cashfree (Force Production via helper which uses environment vars)
+    // Note: createCashfreeOrder helper automatically uses these env vars
 
-    console.log(`[Payment] Creating Production Order: ${orderId} for ₹${amount}`);
+    // 3. Create Unique Order
+    const orderId = `ORDER_${Date.now()}`;
+    const amount = planType === 'weekly' ? 99 : 29;
 
-    // 3. Create Order
-    // We use the helper which uses 'fetch', equivalent to SDK but lighter
+    console.log("🚀 Sending request to Cashfree:", { orderId, amount });
+
     const orderData = await createCashfreeOrder({
       orderId: orderId,
       orderAmount: amount,
@@ -45,26 +49,28 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
       customerEmail: "user@riya.ai",
       customerPhone: "9999999999",
       returnUrl: `${process.env.BASE_URL || 'https://riya-ai.site'}/payment/callback?orderId=${orderId}`,
-      customerId: userId
+      customerId: "USER_" + Date.now()
     });
 
-    console.log('[Payment] Generated Session:', orderData.payment_session_id);
+    // 5. Check if we actually got data
+    const sessionId = orderData.payment_session_id;
+    if (!sessionId) {
+      console.error("❌ Cashfree Response contained no ID:", orderData);
+      throw new Error("Cashfree returned success but NO session ID");
+    }
 
-    // 4. Return Session ID to Frontend (Snake Case matching Prompt)
-    res.json({
-      payment_session_id: orderData.payment_session_id,
-      order_id: orderData.order_id,
-      amount,
-      currency: 'INR'
-    });
+    console.log("✅ Session ID Generated:", sessionId);
+
+    res.json({ payment_session_id: sessionId });
 
   } catch (error: any) {
-    console.error('[Payment] Error:', error.message);
-    // 🛑 LOG THE REAL ERROR AND SEND TO FRONTEND
-    // This matches the 'Loud Backend' requirement to show exact failure reason
+    // 🛑 CAPTURE THE REAL ERROR
+    const internalMessage = error.message;
+    console.error("🔥 FATAL ERROR:", internalMessage);
+
     res.status(500).json({
       error: true,
-      message: error.message || "Unknown Payment Error"
+      details: internalMessage
     });
   }
 });
