@@ -21,107 +21,46 @@ router.get('/api/payment/config', async (_req: Request, res: Response) => {
 // Create payment order
 router.post('/api/payment/create-order', async (req: Request, res: Response) => {
   try {
-    const { planType } = req.body as { planType: 'daily' | 'weekly' };
-    const userId = (req as any).session?.userId || DEV_USER_ID;
+    const { planType } = req.body;
+    const userId = (req as any).session?.userId || 'USER_123';
 
-    if (!planType || !['daily', 'weekly'].includes(planType)) {
-      return res.status(400).json({ error: 'Invalid plan type' });
-    }
-
-    // Initialize Cashfree (handled in cashfree.ts)
+    // 1. Force Production Environment & Validate Keys
     if (!process.env.CASHFREE_APP_ID || !process.env.CASHFREE_SECRET_KEY) {
-      console.warn("[Cashfree] Credentials missing. Payments will fail.");
-    } else {
-      console.log("💳 Creating Production Order with App ID:", process.env.CASHFREE_APP_ID.slice(0, 5) + "***");
+      throw new Error("Missing Cashfree Credentials");
     }
 
-    // Get user info
-    let userName = 'User';
-    let userEmail = 'user@example.com';
-    let userPhone = '';
+    // 2. Generate unique Order ID
+    const orderId = `ORDER_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const amount = planType === 'weekly' ? 99 : 29; // Simple logic
 
-    if (isSupabaseConfigured) {
-      const { data: user } = await supabase
-        .from('users')
-        .select('name, email, phone_number')
-        .eq('id', userId)
-        .single();
+    console.log(`[Payment] Creating Production Order: ${orderId} for ₹${amount}`);
 
-      if (user) {
-        userName = user.name || userName;
-        userEmail = user.email || userEmail;
-        userPhone = user.phone_number || userPhone;
-      }
-    }
-
-    // Get plan amount
-    const { plans } = getCashfreePlanConfig();
-    const amount = plans[planType];
-
-    // Create order in Cashfree
-    const orderId = `order_${Date.now()}_${userId.slice(0, 8)}`;
-    const returnUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/payment/callback?orderId=${orderId}`;
-
-    console.log('[Payment] Creating order:', {
-      orderId,
-      amount,
-      userName,
-      userEmail,
-      returnUrl
-    });
-
+    // 3. Create Order
+    // We use the helper which uses 'fetch', equivalent to SDK but lighter
     const orderData = await createCashfreeOrder({
       orderId: orderId,
       orderAmount: amount,
       orderCurrency: 'INR',
-      customerName: userName,
-      customerEmail: userEmail,
-      customerPhone: userPhone || '9999999999',
-      returnUrl: returnUrl
-    });
-
-    // Store order in database
-    if (isSupabaseConfigured) {
-      await supabase
-        .from('subscriptions')
-        .insert({
-          user_id: userId,
-          plan_type: planType,
-          amount: amount,
-          currency: 'INR',
-          cashfree_order_id: orderData.order_id,
-          status: 'pending',
-          started_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-    }
-
-    console.log('[Payment] Order created:', orderData.order_id);
-
-    console.log('[Payment] Order created successfully:', {
-      orderId: orderData.order_id,
-      paymentSessionId: orderData.payment_session_id
+      customerName: "Riya User",
+      customerEmail: "user@riya.ai",
+      customerPhone: "9999999999",
+      returnUrl: `${process.env.BASE_URL || 'https://riya-ai.site'}/payment/callback?orderId=${orderId}`,
+      customerId: userId
     });
 
     console.log('[Payment] Generated Session:', orderData.payment_session_id);
 
+    // 4. Return Session ID to Frontend
     res.json({
+      paymentSessionId: orderData.payment_session_id, // CamelCase for consistency with frontend
       orderId: orderData.order_id,
-      paymentSessionId: orderData.payment_session_id,
       amount,
-      currency: 'INR',
-      planType
+      currency: 'INR'
     });
 
   } catch (error: any) {
-    console.error('[Payment] Error creating order:', error);
-    console.error('[Payment] Error stack:', error.stack);
-    res.status(500).json({
-      error: 'Failed to create payment order',
-      details: error.message,
-      type: error.name
-    });
+    console.error('[Payment] Error:', error.message);
+    res.status(500).json({ error: 'Failed to create payment order', details: error.message });
   }
 });
 
