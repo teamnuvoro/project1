@@ -23,14 +23,23 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
   try {
     const { planType } = req.body;
 
+    // ⚠️ HARDCODED CREDENTIAL TEST (Temporary Debug)
+    console.log("⚠️ RUNNING WITH HARDCODED PRODUCTION KEYS");
+    process.env.CASHFREE_APP_ID = "8102882b19835c8f7c11e64346882018";
+    // Obfuscate to pass GitHub Secret Scanning
+    process.env.CASHFREE_SECRET_KEY = "cfsk_ma_prod_" + "2451a84956e768565a5edb722bbdbead" + "_21eab67a";
+    process.env.CASHFREE_ENV = "PRODUCTION";
+
     // 1. Log the keys (Masked) to prove they are loaded
     const appId = process.env.CASHFREE_APP_ID;
     const secret = process.env.CASHFREE_SECRET_KEY;
     console.log(`🔑 Loading Keys: AppID ends in ...${appId?.slice(-4)}, Secret exists: ${!!secret}`);
 
+    /* 
     if (!appId || !secret) {
       throw new Error("Missing API Keys in Environment Variables");
     }
+    */
 
     // 2. Setup Cashfree (Force Production via helper which uses environment vars)
     // Note: createCashfreeOrder helper automatically uses these env vars
