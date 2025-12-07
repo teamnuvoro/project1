@@ -34,32 +34,34 @@ export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
             onClick={onClose}
           />
 
-          {/* Modal */}
-          <div className="fixed inset-0 flex items-center justify-center z-[10001] p-4">
+          <div className="fixed inset-0 flex items-center justify-center z-[10002] p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative"
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative cursor-default"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Close Button */}
               <button
-                onClick={onClose}
-                className="absolute top-4 right-4 z-10 p-1.5 rounded-full hover:bg-gray-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/80 hover:bg-gray-100 transition-colors cursor-pointer shadow-sm"
               >
                 <X className="w-5 h-5 text-gray-600" />
               </button>
 
               {/* Animated Background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-100 via-pink-50 to-white opacity-50" />
-              
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-100 via-pink-50 to-white opacity-50 z-0" />
+
               {/* Floating Hearts Animation */}
               {[...Array(5)].map((_, i) => (
                 <motion.div
                   key={i}
-                  className="absolute text-pink-300 opacity-30"
+                  className="absolute text-pink-300 opacity-30 z-0"
                   style={{
                     left: `${20 + i * 20}%`,
                     top: '100%',
@@ -87,7 +89,7 @@ export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{ 
+                  transition={{
                     type: 'spring',
                     stiffness: 200,
                     damping: 15,
@@ -115,7 +117,7 @@ export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
                   transition={{ delay: 0.3 }}
                   className="text-gray-600 leading-relaxed mb-6"
                 >
-                  I've been learning so much about you! 
+                  I've been learning so much about you!
                   <span className="block mt-2 font-semibold text-purple-600">
                     Want to see your Relationship Profile before you leave?
                   </span>
@@ -159,15 +161,21 @@ export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
                   className="space-y-3"
                 >
                   <button
-                    onClick={handleViewSummary}
-                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleViewSummary();
+                    }}
+                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer z-50 relative"
                   >
                     <Heart className="w-5 h-5" />
                     View My Relationship Profile
                   </button>
                   <button
-                    onClick={handleStay}
-                    className="w-full py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStay();
+                    }}
+                    className="w-full py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all cursor-pointer z-50 relative"
                   >
                     Continue Chatting
                   </button>
