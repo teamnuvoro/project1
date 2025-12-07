@@ -31,6 +31,8 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
     // Initialize Cashfree (handled in cashfree.ts)
     if (!process.env.CASHFREE_APP_ID || !process.env.CASHFREE_SECRET_KEY) {
       console.warn("[Cashfree] Credentials missing. Payments will fail.");
+    } else {
+      console.log("💳 Creating Production Order with App ID:", process.env.CASHFREE_APP_ID.slice(0, 5) + "***");
     }
 
     // Get user info

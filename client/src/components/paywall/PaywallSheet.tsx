@@ -49,7 +49,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
 
   const planAmounts = paymentConfig?.plans ?? { daily: 19, weekly: 49 };
 
-  const cashfreeMode = paymentConfig?.cashfreeMode || "sandbox";
+  const cashfreeMode = paymentConfig?.cashfreeMode || "production";
 
   const loadCashfreeSdk = (mode: "sandbox" | "production") => {
     return new Promise((resolve) => {
