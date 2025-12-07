@@ -62,8 +62,15 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
       throw new Error("Cashfree returned success but NO session ID");
     }
 
-    // Safety Check: Detect Mock IDs or Sandbox Mode
-    // If the server is configured for Sandbox/Test, we SHOULD NOT be processing real payments here.
+    // Fail-Safe: Detect Test Keys in Production
+    const currentAppId = process.env.CASHFREE_APP_ID || '';
+    if (currentAppId.toUpperCase().includes('TEST')) {
+      const msg = "CRITICAL CONFIG ERROR: Render is using TEST KEYS but code is set to PRODUCTION. Please update Render Environment Variables immediately.";
+      console.error("🔥 " + msg);
+      throw new Error(msg);
+    }
+
+    // Safety Check: Detect Mock IDs or Sandbox Mode from helper
     if (process.env.CASHFREE_ENV === 'TEST' || (sessionId.startsWith("session_") && sessionId.length < 30)) {
       console.error("❌ CRITICAL: Attempted to use Sandbox/Mock Session ID in Production Flow:", sessionId);
       throw new Error("SERVER MISCONFIGURATION: Server is in TEST mode but Payment is in PRODUCTION. Update your Render Environment Variables.");
