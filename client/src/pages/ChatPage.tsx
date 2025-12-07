@@ -167,7 +167,9 @@ export default function ChatPage() {
 
   const isLoading = isSessionLoading;
   const isDev = import.meta.env.MODE === 'development';
-  const isLimitReached = false; // Disabled for testing - no message limits
+  // Use userUsage to check limit. Fallback to messages.length if usage not yet loaded but we have messages.
+  const currentCount = userUsage?.messageCount || messages.length || 0;
+  const isLimitReached = !user?.premium_user && currentCount >= 20;
 
   const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -302,11 +304,18 @@ export default function ChatPage() {
         title: "Failed to send message",
         description: "Please try again.",
         variant: "destructive",
+        duration: 3000,
       });
     },
   });
 
   const handleSendMessage = (content: string) => {
+    // Client-side Paywall Check
+    if (isLimitReached) {
+      setPaywallOpen(true);
+      return;
+    }
+
     const optimisticMsg = addOptimisticMessage(content);
     if (!optimisticMsg) return;
 

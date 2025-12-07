@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { analytics } from "@/lib/analytics";
+import { PaywallSheet } from "@/components/paywall/PaywallSheet";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Mock Data for the Gallery Item
 const SNAP_DATA = {
@@ -20,10 +22,15 @@ const SNAP_DATA = {
 export default function GalleryPage() {
     const [isUnlocked, setIsUnlocked] = useState(false);
     const [replyText, setReplyText] = useState("");
+    const [showPaywall, setShowPaywall] = useState(false);
     const { toast } = useToast();
+    const { user } = useAuth();
+
+    // Check if user is already premium
+    const isPremium = user?.premium_user || false;
 
     const handleUnlock = () => {
-        console.log("Payment Triggered for Snap:", SNAP_DATA.id);
+        console.log("Unlock Triggered for Snap:", SNAP_DATA.id);
 
         analytics.track('unlock_attempt', {
             item: SNAP_DATA.id,
@@ -31,15 +38,20 @@ export default function GalleryPage() {
             source: 'gallery_blur'
         });
 
-        // Simulate payment delay
-        setTimeout(() => {
-            setIsUnlocked(true);
-            toast({
-                title: "Memory Unlocked! 🔓",
-                description: "You've unlocked a private moment with Riya.",
-                duration: 3000,
-            });
-        }, 1000);
+        if (!isPremium) {
+            setShowPaywall(true);
+            return;
+        }
+
+        // If Premium, Simulate Unlock (or allow unlock)
+        // In reality, this might also require a separate purchase if snaps aren't included in Premium
+        // But for now, user implies Premium = Access
+        setIsUnlocked(true);
+        toast({
+            title: "Memory Unlocked! 🔓",
+            description: "You've unlocked a private moment with Riya.",
+            duration: 3000,
+        });
     };
 
     const handleSendReply = () => {
@@ -83,8 +95,8 @@ export default function GalleryPage() {
                                 className="w-full h-full object-cover"
                                 initial={false}
                                 animate={{
-                                    filter: isUnlocked ? "blur(0px)" : "blur(16px)",
-                                    scale: isUnlocked ? 1 : 1.05,
+                                    filter: (isUnlocked || isPremium) ? "blur(0px)" : "blur(16px)", // Allow peek if premium? Or just unlock on click
+                                    scale: (isUnlocked || isPremium) ? 1 : 1.05,
                                 }}
                                 transition={{ duration: 0.8, ease: "easeInOut" }}
                             />
@@ -92,7 +104,7 @@ export default function GalleryPage() {
 
                         {/* Overlay for Locked State */}
                         <AnimatePresence>
-                            {!isUnlocked && (
+                            {!isUnlocked && !isPremium && (
                                 <motion.div
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
@@ -124,7 +136,7 @@ export default function GalleryPage() {
 
                         {/* Content for Unlocked State (Chat Interface) */}
                         <AnimatePresence>
-                            {isUnlocked && (
+                            {(isUnlocked || isPremium) && (
                                 <motion.div
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
@@ -155,11 +167,11 @@ export default function GalleryPage() {
 
                         {/* Status Badge (Top Left) */}
                         <div className="absolute top-4 left-4">
-                            <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border ${isUnlocked
+                            <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border ${(isUnlocked || isPremium)
                                 ? "bg-green-500/20 border-green-500/30 text-green-300"
                                 : "bg-pink-500/20 border-pink-500/30 text-pink-300 animate-pulse"
                                 }`}>
-                                {isUnlocked ? "Unlocked" : "Premium"}
+                                {(isUnlocked || isPremium) ? "Unlocked" : "Premium"}
                             </div>
                         </div>
 
@@ -177,6 +189,8 @@ export default function GalleryPage() {
 
                 </div>
             </main>
+
+            <PaywallSheet open={showPaywall} onOpenChange={setShowPaywall} />
         </div>
     );
 }
