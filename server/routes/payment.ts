@@ -173,7 +173,75 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
   }
 });
 
-// Verify payment status
+// Get payment status (GET endpoint for polling)
+router.get('/api/payment/status/:orderId', async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!orderId) {
+      return res.status(400).json({ error: 'Order ID is required' });
+    }
+
+    // Get order from database
+    if (!isSupabaseConfigured) {
+      return res.status(503).json({ error: 'Database not configured' });
+    }
+
+    const { data: subscription, error: fetchError } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('cashfree_order_id', orderId)
+      .single();
+
+    if (fetchError || !subscription) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check payment status with Cashfree Gateway API
+    const cashfreeBaseUrl = getCashfreeBaseUrl();
+
+    const response = await fetch(`${cashfreeBaseUrl}/orders/${orderId}`, {
+      method: 'GET',
+      headers: {
+        'x-api-version': '2023-08-01',
+        'x-client-id': process.env.CASHFREE_APP_ID!,
+        'x-client-secret': process.env.CASHFREE_SECRET_KEY!,
+      },
+    });
+
+    const paymentData = await response.json();
+
+    if (!response.ok) {
+      console.error('[Payment Status] Cashfree error:', paymentData);
+      return res.status(500).json({
+        error: 'Failed to check payment status',
+        details: paymentData
+      });
+    }
+
+    const paymentStatus = paymentData.order_status;
+    const isPaid = paymentStatus === 'PAID' || paymentStatus === 'ACTIVE' || paymentStatus === 'SUCCESS';
+    const isAlreadyActive = subscription.status === 'active';
+
+    // Return status without updating (for polling)
+    res.json({
+      success: isPaid || isAlreadyActive,
+      status: paymentStatus,
+      orderId,
+      planType: subscription.plan_type,
+      message: (isPaid || isAlreadyActive) ? 'Payment successful' : 'Payment pending'
+    });
+
+  } catch (error: any) {
+    console.error('[Payment Status] Error:', error);
+    res.status(500).json({
+      error: 'Failed to check payment status',
+      details: error.message
+    });
+  }
+});
+
+// Verify payment status (POST endpoint - updates database)
 router.post('/api/payment/verify', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.body;

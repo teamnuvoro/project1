@@ -13,8 +13,12 @@ export default function PaymentCallback() {
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'verifying'>('loading');
   const [message, setMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const maxRetries = 5;
-  const retryDelay = 2000; // 2 seconds
+  const retryDelay = 2000; // 2 seconds for initial retries
+  const pollingIntervalMs = 2 * 60 * 1000; // 2 minutes for continuous polling
+  const maxPollingTime = 10 * 60 * 1000; // Stop after 10 minutes
+  const [startTime] = useState(Date.now());
 
   const verifyPayment = async (orderId: string, attempt: number = 0): Promise<boolean> => {
     try {
@@ -106,8 +110,75 @@ export default function PaymentCallback() {
       return;
     }
 
-    verifyPayment(orderId);
-  }, []);
+    // Initial verification attempt
+    verifyPayment(orderId).then((success) => {
+      // If not successful, start polling
+      if (!success && status !== 'success' && status !== 'failed') {
+        startPolling(orderId);
+      }
+    });
+
+    // Cleanup polling on unmount
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkPaymentStatus = async (orderId: string): Promise<boolean> => {
+    try {
+      // Use GET endpoint for lightweight status checks (polling)
+      const response = await fetch(`/api/payment/status/${orderId}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Payment confirmed - now verify and update database
+        return await verifyPayment(orderId);
+      }
+
+      return false;
+    } catch (error: any) {
+      console.error('Status check error:', error);
+      return false;
+    }
+  };
+
+  const startPolling = (orderId: string) => {
+    // Clear any existing interval
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    setStatus('verifying');
+    setMessage('Waiting for payment confirmation. Checking status every 2 minutes...');
+
+    const interval = setInterval(async () => {
+      // Check if we've exceeded max polling time
+      const elapsed = Date.now() - startTime;
+      if (elapsed > maxPollingTime) {
+        clearInterval(interval);
+        setPollingInterval(null);
+        setStatus('failed');
+        setMessage('Payment verification timeout. Please contact support if payment was deducted.');
+        trackPaymentFailed('polling_timeout');
+        return;
+      }
+
+      // Poll the status check API (lightweight GET request)
+      const success = await checkPaymentStatus(orderId);
+      if (success) {
+        clearInterval(interval);
+        setPollingInterval(null);
+      }
+    }, pollingIntervalMs);
+
+    setPollingInterval(interval);
+  };
 
   const handleContinue = () => {
     setLocation('/chat');
@@ -135,6 +206,11 @@ export default function PaymentCallback() {
             <p className="text-muted-foreground" data-testid="text-payment-message">
               {message || 'Please wait while we confirm your payment'}
             </p>
+            {pollingInterval && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Automatically checking payment status every 2 minutes...
+              </p>
+            )}
           </>
         )}
 
