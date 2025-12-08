@@ -307,7 +307,8 @@ router.post("/api/chat", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Message cannot be empty" });
     }
 
-    // Check paywall
+    // --- PAYWALL CHECK START ---
+    // Moved to TOP to prevent 500 errors from blocking Paywall
     const messageCount = await getUserMessageCount(userId);
     let isPremium = user?.premium_user || false;
 
@@ -316,14 +317,11 @@ router.post("/api/chat", async (req: Request, res: Response) => {
       const expiryDate = new Date(user.subscription_expiry);
       if (expiryDate > new Date()) {
         isPremium = true;
-      } else if (isPremium) {
-        // Only if we rely on expiry to demote
-        // console.log("Subscription expired");
-        // isPremium = false; // Optional: revert to free if expired, if we have a worker to clear this flag
       }
     }
 
     if (!isPremium && messageCount >= FREE_MESSAGE_LIMIT) {
+      console.log(`[Paywall] BLOCKED User ${userId}. Count: ${messageCount}`);
       return res.status(402).json({
         status: 402,
         code: "QUOTA_EXHAUSTED",
@@ -334,6 +332,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         ]
       });
     }
+    // --- PAYWALL CHECK END ---
 
     console.log(`[Chat] User message: "${content.substring(0, 50)}..." (${messageCount + 1}/${FREE_MESSAGE_LIMIT})`);
 
