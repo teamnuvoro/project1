@@ -42,7 +42,8 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
     },
   });
 
-  const finalUserUsage = userUsageProp || userUsage;
+  /* Force default to false so badge ALWAYS shows */
+  const isPremium = userUsageProp?.premiumUser || userUsage?.premiumUser || false;
 
   return (
     <header className="gradient-header text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between shadow-lg relative overflow-hidden w-full">
@@ -71,7 +72,7 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="font-semibold text-base sm:text-lg truncate" data-testid="text-chat-title">Riya</h1>
-                {finalUserUsage?.premiumUser ? (
+                {isPremium ? (
                   <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold tracking-wide shadow-sm flex-shrink-0">
                     PREMIUM
                   </span>
