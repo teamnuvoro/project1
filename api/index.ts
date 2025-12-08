@@ -134,25 +134,7 @@ app.patch("/api/user/personality", async (req, res) => {
     }
 });
 
-// Auth session endpoint
-app.get("/api/auth/session", async (req, res) => {
-    try {
-        res.json({
-            user: {
-                id: "dev-user-id",
-                name: "Dev User",
-                email: "dev@example.com",
-                persona: "sweet_supportive",
-                premium_user: false,
-                gender: "male",
-                onboarding_complete: false
-            }
-        });
-    } catch (error: any) {
-        console.error("[/api/auth/session] Error:", error);
-        res.status(500).json({ error: "Failed to get session" });
-    }
-});
+
 
 // Serve static files from the React app build directory
 import path from "path";
