@@ -475,6 +475,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
 
               if (chunkContent) {
                 fullResponse += chunkContent;
+                // Standardize on 'content' key for frontend
                 const responseData = `data: ${JSON.stringify({ content: chunkContent, done: false })}\n\n`;
                 res.write(responseData);
               }
