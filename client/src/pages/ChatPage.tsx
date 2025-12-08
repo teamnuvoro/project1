@@ -59,7 +59,7 @@ export default function ChatPage() {
   const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([]);
   const [failedMessage, setFailedMessage] = useState<string>("");
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, refetchUser } = useAuth();
   const isMobile = useIsMobile();
   const abortControllerRef = useRef<AbortController | null>(null);
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
@@ -134,7 +134,11 @@ export default function ChatPage() {
     callLimitReached: boolean;
   }
 
-  const { data: userUsage } = useQuery<UserUsage>({
+  // Check if we're coming from payment success
+  const [location] = useLocation();
+  const isFromPayment = new URLSearchParams(window.location.search).get('paymentSuccess') === 'true';
+
+  const { data: userUsage, refetch: refetchUsage } = useQuery<UserUsage>({
     queryKey: ["/api/user/usage"],
     queryFn: async () => {
       try {
@@ -147,8 +151,22 @@ export default function ChatPage() {
         return { messageCount: 0, callDuration: 0, premiumUser: false, messageLimitReached: false, callLimitReached: false };
       }
     },
-    staleTime: 30000,
+    staleTime: isFromPayment ? 0 : 30000, // Force fresh fetch if coming from payment
+    refetchOnMount: isFromPayment, // Force refetch on mount if from payment
   });
+
+  // Force refetch user and usage when coming from payment
+  useEffect(() => {
+    if (isFromPayment) {
+      console.log('🔄 Payment success detected - forcing refresh...');
+      // Refetch user from auth context
+      refetchUser();
+      // Refetch usage
+      refetchUsage();
+      // Clean up URL parameter
+      window.history.replaceState({}, '', '/chat');
+    }
+  }, [isFromPayment, refetchUsage, refetchUser]);
 
   const quickReplies = [
     "Mera current relationship confusing hai",

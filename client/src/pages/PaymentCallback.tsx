@@ -34,32 +34,40 @@ export default function PaymentCallback() {
         // Payment verified successfully
         console.log('✅ Payment verified successfully');
         
-        // Invalidate ALL user-related queries
+        // AGGRESSIVE CACHE CLEARING - Remove all cached data
+        queryClient.clear();
+        
+        // Invalidate ALL user-related queries (with exact: false to catch all variants)
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['/api/user/usage'] }),
-          queryClient.invalidateQueries({ queryKey: ['/api/user/usage', 'header'] }),
-          queryClient.invalidateQueries({ queryKey: ['/api/user/usage', 'navbar'] }),
-          queryClient.invalidateQueries({ queryKey: ['session'] }),
+          queryClient.invalidateQueries({ queryKey: ['/api/user/usage'], exact: false }),
+          queryClient.invalidateQueries({ queryKey: ['session'], exact: false }),
+          queryClient.invalidateQueries({ queryKey: ['messages'], exact: false }),
         ]);
 
         // Force refetch user profile to get updated premium status
         await refetchUser();
 
-        // Wait a moment for queries to refetch
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Wait for database to propagate
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Double-check by refetching user again
+        // Refetch user again to ensure we have latest data
         await refetchUser();
+
+        // Force refetch all usage queries
+        await Promise.all([
+          queryClient.refetchQueries({ queryKey: ['/api/user/usage'], exact: false }),
+        ]);
 
         setStatus('success');
         setMessage('Payment successful! You now have unlimited access.');
 
         trackPaymentSuccessful(data.planType || 'unknown', data.endDate || '');
 
-        // Redirect to chat after a short delay to ensure UI updates
+        // Redirect to chat with a refresh parameter to force refetch
         setTimeout(() => {
-          setLocation('/chat');
-        }, 1000);
+          // Add timestamp to force a fresh load
+          setLocation('/chat?paymentSuccess=true&t=' + Date.now());
+        }, 1500);
 
         return true;
       } else {
