@@ -159,12 +159,43 @@ export default function ChatPage() {
     "Kaise pata chalega main relationship ready hoon?"
   ];
 
+  // Helper for Local Usage Tracking (Fallback for when DB is stuck)
+  const getLocalUsage = () => {
+    try {
+      const today = new Date().toDateString();
+      const stored = localStorage.getItem('daily_chat_usage');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.date === today) {
+          return parsed.count;
+        }
+      }
+      return 0;
+    } catch { return 0; }
+  };
+
+  const incrementLocalUsage = () => {
+    const today = new Date().toDateString();
+    const current = getLocalUsage();
+    localStorage.setItem('daily_chat_usage', JSON.stringify({
+      date: today,
+      count: current + 1
+    }));
+    return current + 1;
+  };
+
   const isLoading = isSessionLoading;
   const isDev = import.meta.env.MODE === 'development';
-  // Use userUsage to check limit. Fallback to messages.length if usage not yet loaded but we have messages.
-  const currentCount = userUsage?.messageCount || messages.length || 0;
-  // Check premium status from both Auth context (cached) and Usage API (live)
+
+  // Use the HIGHER of backend or local count to be safe
+  const localCount = getLocalUsage();
+  const backendCount = userUsage?.messageCount || 0;
+  // If backend is failing (0), we trust local. If backend has data, we trust it.
+  const currentCount = Math.max(localCount, backendCount, messages.length);
+
+  // Check premium status
   const isPremium = user?.premium_user || userUsage?.premiumUser || false;
+  // STRICT LIMIT CHECK
   const isLimitReached = !isPremium && currentCount >= 20;
 
   const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -334,6 +365,9 @@ export default function ChatPage() {
 
     // Track message sent
     trackMessageSent(content.length, messages.length + 1);
+
+    // Update local usage immediately so the lock triggers on next render
+    incrementLocalUsage();
 
     analytics.track("message_sent", {
       length: content.length,
