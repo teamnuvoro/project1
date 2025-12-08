@@ -320,13 +320,12 @@ router.post("/api/chat", async (req: Request, res: Response) => {
 
     if (!isPremium && messageCount >= FREE_MESSAGE_LIMIT) {
       return res.status(402).json({
-        error: "PAYWALL_HIT",
-        message: "You've reached your free message limit! Upgrade to continue chatting.",
-        messageCount,
-        messageLimit: FREE_MESSAGE_LIMIT,
-        planOptions: [
-          { id: 'daily', name: '24 Hours Access', price: 19, currency: 'INR' },
-          { id: 'weekly', name: '7 Days Access', price: 49, currency: 'INR' }
+        status: 402,
+        code: "QUOTA_EXHAUSTED",
+        message: "Your daily 20 free chat messages have been used.",
+        offers: [
+          { plan: "daily", price: 19, duration: "24 hours" },
+          { plan: "weekly", price: 49, duration: "7 days" }
         ]
       });
     }

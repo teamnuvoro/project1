@@ -193,10 +193,10 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader className="text-center space-y-3 pb-4">
           <DialogTitle className="text-2xl font-bold">
-            You've reached your free limit
+            Oops! Your Daily Chats Are Done.
           </DialogTitle>
           <DialogDescription className="text-base">
-            Continue your chat and calls with Riya.
+            You've used your 20 free messages for today. <span className="font-bold text-foreground">Unlock unlimited chats</span> with Riya by choosing a pass below.
           </DialogDescription>
         </DialogHeader>
 
@@ -236,7 +236,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
               variant="outline"
               disabled={isProcessing}
             >
-              {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Get Daily Pass'}
+              {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Daily Unlimited Pass - ₹${planAmounts.daily}`}
             </Button>
           </Card>
 
@@ -286,7 +286,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
               className="w-full mt-4"
               disabled={isProcessing}
             >
-              {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Get Weekly Pass'}
+              {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Weekly Unlimited Pass - ₹${planAmounts.weekly}`}
             </Button>
           </Card>
         </div>
