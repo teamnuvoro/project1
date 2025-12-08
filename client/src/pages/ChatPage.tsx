@@ -352,10 +352,24 @@ export default function ChatPage() {
         setIsTyping(false);
       }
     },
-    onError: (error, variables) => {
+    onError: (error: any, variables) => {
       setIsTyping(false);
       removeOptimisticMessage(variables.optimisticId);
       setFailedMessage(variables.content);
+
+      // Check for Paywall / Quota Exhausted
+      // The fetch throw might be wrapped, so check message or properties
+      const isPaywall = error.message?.includes('PAYWALL') ||
+        error.message?.includes('QUOTA') ||
+        (error as any).status === 402;
+
+      if (isPaywall) {
+        console.log("💰 Paywall Triggered via Error Handler");
+        setPaywallOpen(true);
+        // Do NOT show the generic error toast
+        return;
+      }
+
       toast({
         title: "Failed to send message",
         description: "Please try again.",

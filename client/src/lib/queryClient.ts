@@ -9,12 +9,27 @@ async function throwIfResNotOk(res: Response) {
       window.location.href = "/login";
       throw new Error("Unauthorized");
     }
-    const text = (await res.text()) || res.statusText;
+    // Try to parse error JSON
+    let errorData;
+    try {
+      errorData = await res.json();
+    } catch {
+      // If text or empty, it's not JSON, so we'll rely on statusText or a generic message.
+    }
+
+    // Construct robust error object
+    const error = new Error(errorData?.message || res.statusText || "Unknown error");
+    (error as any).status = res.status;
+    (error as any).code = errorData?.code;
+    (error as any).details = errorData;
+
     const traceId = res.headers.get("X-Trace-ID");
     if (traceId) {
       console.error(`[Request Failed] Trace ID: ${traceId}`);
+      (error as any).traceId = traceId; // Add traceId to the error object
     }
-    throw new Error(`${res.status}: ${text} (Trace ID: ${traceId || 'N/A'})`);
+
+    throw error;
   }
 }
 
