@@ -13,7 +13,7 @@ router.get('/api/user', async (req: Request, res: Response) => {
   try {
     // For now, use a dev user - in production, get from session
     const userId = (req as any).session?.userId || DEV_USER_ID;
-    
+
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
@@ -88,9 +88,9 @@ router.patch('/api/user/persona', async (req: Request, res: Response) => {
     // If Supabase is not configured, just return success (dev mode)
     if (!isSupabaseConfigured) {
       console.log(`[PATCH /api/user/persona] Dev mode: User ${userId} selected persona: ${persona}`);
-      return res.json({ 
-        success: true, 
-        persona, 
+      return res.json({
+        success: true,
+        persona,
         personaConfig: PERSONA_CONFIGS[persona],
         message: 'Persona updated (dev mode - not persisted)'
       });
@@ -111,9 +111,9 @@ router.patch('/api/user/persona', async (req: Request, res: Response) => {
       console.error('[PATCH /api/user/persona] Supabase error:', error);
       // Fallback to dev mode if Supabase fails
       console.log(`[PATCH /api/user/persona] Falling back to dev mode for persona: ${persona}`);
-      return res.json({ 
-        success: true, 
-        persona, 
+      return res.json({
+        success: true,
+        persona,
         personaConfig: PERSONA_CONFIGS[persona],
         message: 'Persona updated (dev mode - Supabase unavailable)'
       });
@@ -125,9 +125,9 @@ router.patch('/api/user/persona', async (req: Request, res: Response) => {
     // Even on error, return success in dev mode to prevent UI blocking
     const { persona } = req.body as { persona: PersonaType };
     if (persona && PERSONA_CONFIGS[persona]) {
-      return res.json({ 
-        success: true, 
-        persona, 
+      return res.json({
+        success: true,
+        persona,
         personaConfig: PERSONA_CONFIGS[persona],
         message: 'Persona updated (dev mode - error handled)'
       });
@@ -160,7 +160,7 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
 
       const { data: user } = await supabase
         .from('users')
-        .select('premium_user')
+        .select('premium_user, subscription_plan')
         .eq('id', userId)
         .single();
 
@@ -174,6 +174,7 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
       messageCount: stats.total_messages,
       callDuration: stats.total_call_seconds,
       premiumUser: isPremium,
+      subscriptionPlan: (user as any)?.subscription_plan,
       messageLimitReached: false, // Disabled for testing
       callLimitReached: !isPremium && stats.total_call_seconds >= 135,
     });

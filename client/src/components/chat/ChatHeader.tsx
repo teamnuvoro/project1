@@ -18,6 +18,7 @@ interface ChatHeaderProps {
     messageCount: number;
     callDuration: number;
     premiumUser: boolean;
+    subscriptionPlan?: string;
     messageLimitReached?: boolean;
     callLimitReached?: boolean;
   };
@@ -34,6 +35,7 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
     messageCount: number;
     callDuration: number;
     premiumUser: boolean;
+    subscriptionPlan?: string;
   }>({
     queryKey: ["/api/user/usage", "header"],
     queryFn: async () => {
@@ -43,6 +45,7 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
   });
 
   /* Force default to false so badge ALWAYS shows */
+  const finalUserUsage = userUsageProp || userUsage;
   const isPremium = userUsageProp?.premiumUser || userUsage?.premiumUser || false;
 
   return (
@@ -79,7 +82,9 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
                 <h1 className="font-semibold text-base sm:text-lg truncate" data-testid="text-chat-title">Riya</h1>
                 {isPremium ? (
                   <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold tracking-wide shadow-sm flex-shrink-0">
-                    PREMIUM
+                    {finalUserUsage?.subscriptionPlan
+                      ? `PREMIUM (${finalUserUsage.subscriptionPlan.toUpperCase()})`
+                      : 'PREMIUM'}
                   </span>
                 ) : (
                   <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold tracking-wide border border-white/30 flex-shrink-0">
