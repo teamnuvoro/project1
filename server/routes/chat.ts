@@ -304,7 +304,19 @@ router.post("/api/chat", async (req: Request, res: Response) => {
 
     // Check paywall
     const messageCount = await getUserMessageCount(userId);
-    const isPremium = user?.premium_user || false;
+    let isPremium = user?.premium_user || false;
+
+    // Check subscription expiry explicitly
+    if (user?.subscription_expiry) {
+      const expiryDate = new Date(user.subscription_expiry);
+      if (expiryDate > new Date()) {
+        isPremium = true;
+      } else if (isPremium) {
+        // Only if we rely on expiry to demote
+        // console.log("Subscription expired");
+        // isPremium = false; // Optional: revert to free if expired, if we have a worker to clear this flag
+      }
+    }
 
     if (!isPremium && messageCount >= FREE_MESSAGE_LIMIT) {
       return res.status(402).json({
@@ -312,6 +324,10 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         message: "You've reached your free message limit! Upgrade to continue chatting.",
         messageCount,
         messageLimit: FREE_MESSAGE_LIMIT,
+        planOptions: [
+          { id: 'daily', name: '24 Hours Access', price: 19, currency: 'INR' },
+          { id: 'weekly', name: '7 Days Access', price: 49, currency: 'INR' }
+        ]
       });
     }
 

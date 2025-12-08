@@ -235,30 +235,51 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
 
     // Update user premium status if paid
     if (isPaid) {
+      // Calculate expiry
+      const now = new Date();
+      let expiry = new Date();
+      if (subscription.plan_type === 'weekly') {
+        expiry.setDate(expiry.getDate() + 7);
+      } else {
+        // Daily
+        expiry.setTime(expiry.getTime() + 24 * 60 * 60 * 1000);
+      }
+
       await supabase
         .from('users')
         .update({
           premium_user: true,
+          subscription_plan: subscription.plan_type,
+          subscription_expiry: expiry.toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq('id', subscription.user_id);
 
-      console.log('[Payment] ✅ User upgraded to premium:', subscription.user_id);
+      console.log('[Payment] ✅ User upgraded to premium:', subscription.user_id, 'Expiry:', expiry.toISOString());
 
       // INSERT INTO PAYMENTS TABLE (DATA INTEGRITY)
-      await supabase.from('payments').insert({
-        user_id: subscription.user_id,
-        subscription_id: subscription.id,
-        cashfree_order_id: orderId,
-        cashfree_payment_id: paymentData.cf_payment_id || 'UNKNOWN',
-        amount: subscription.amount,
-        status: 'success',
-        plan_type: subscription.plan_type,
-        created_at: new Date().toISOString()
-      });
+      // Check if payment already exists to avoid duplicates (optional but good)
+      const { data: existingPayment } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('cashfree_order_id', orderId)
+        .single();
+
+      if (!existingPayment) {
+        await supabase.from('payments').insert({
+          user_id: subscription.user_id,
+          subscription_id: subscription.id,
+          cashfree_order_id: orderId,
+          cashfree_payment_id: paymentData.cf_payment_id || 'UNKNOWN',
+          amount: subscription.amount,
+          status: 'success',
+          plan_type: subscription.plan_type,
+          created_at: new Date().toISOString()
+        });
+      }
 
       // Log Event
-      await logPaymentEvent(subscription.user_id, 'ENTITLEMENT_GRANTED', orderId, 200, { status: paymentData.order_status });
+      await logPaymentEvent(subscription.user_id, 'ENTITLEMENT_GRANTED', orderId, 200, { status: paymentData.order_status, expiry: expiry.toISOString() });
     }
 
     res.json({
