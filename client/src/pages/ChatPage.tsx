@@ -3,7 +3,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { type Message, type Session } from "@shared/schema";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatInput } from "@/components/chat/ChatInput";
-import { ChatHeader } from "@/components/chat/ChatHeader";
 import { PaywallSheet } from "@/components/paywall/PaywallSheet";
 import { AmplitudePasswordModal } from "@/components/AmplitudePasswordModal";
 import { ExitIntentModal } from "@/components/ExitIntentModal";
@@ -460,17 +459,6 @@ export default function ChatPage() {
         isOpen={showExitModal}
         onClose={closeExitModal}
       />
-
-      {/* Chat Header with Upgrade Button */}
-      <div className="flex-shrink-0">
-        <ChatHeader 
-          sessionId={session?.id} 
-          voiceModeEnabled={voiceModeEnabled}
-          onVoiceModeToggle={() => setVoiceModeEnabled(!voiceModeEnabled)}
-          onPaymentClick={() => setPaywallOpen(true)}
-          userUsage={userUsage}
-        />
-      </div>
 
       {/* Scrollable Messages Area - Takes full height minus input */}
       <div className="flex-1 min-h-0 w-full overflow-hidden">

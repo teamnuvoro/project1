@@ -13,6 +13,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 const actionItems = [
   { title: "Voice Call", url: "/call", icon: Phone },
@@ -23,6 +25,24 @@ export function TopNavbar() {
   const [location, setLocation] = useLocation();
   const { logout, user } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const isChatPage = location === '/chat';
+
+  // Fetch user usage for chat page
+  const { data: userUsage } = useQuery<{
+    messageCount: number;
+    callDuration: number;
+    premiumUser: boolean;
+    subscriptionPlan?: string;
+  }>({
+    queryKey: ["/api/user/usage", "navbar"],
+    queryFn: async () => {
+      const response = await apiRequest("POST", "/api/user/usage", {});
+      return response.json();
+    },
+    enabled: isChatPage, // Only fetch on chat page
+  });
+
+  const isPremium = user?.premium_user || userUsage?.premiumUser || false;
 
   const handleLogout = async () => {
     console.log('🚪 Logout button clicked!');
@@ -31,6 +51,11 @@ export function TopNavbar() {
     console.log('✅ Logout complete, redirecting...');
     // Redirect to signup page
     window.location.href = '/signup';
+  };
+
+  const handleUpgradeClick = () => {
+    const paywallEvent = new CustomEvent('openPaywall');
+    window.dispatchEvent(paywallEvent);
   };
 
   return (
@@ -64,10 +89,25 @@ export function TopNavbar() {
             </div>
 
             {/* Name and Status */}
-            <div className="flex flex-col">
-              <span className="text-white font-semibold text-base leading-tight">
-                Riya
-              </span>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-white font-semibold text-base leading-tight truncate">
+                  Riya
+                </span>
+                {isChatPage && (
+                  isPremium ? (
+                    <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold tracking-wide shadow-sm flex-shrink-0">
+                      {userUsage?.subscriptionPlan
+                        ? `PREMIUM (${userUsage.subscriptionPlan.toUpperCase()})`
+                        : 'PREMIUM'}
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold tracking-wide border border-white/30 flex-shrink-0">
+                      FREE PLAN
+                    </span>
+                  )
+                )}
+              </div>
               <span className="text-white text-xs opacity-80 flex items-center gap-1">
                 <span className="text-green-400 text-[10px]">●</span>
                 Online
@@ -78,6 +118,18 @@ export function TopNavbar() {
 
         {/* Right: Action Icons */}
         <div className="flex items-center gap-1 sm:gap-2">
+          {/* Upgrade to Premium Button (only on chat page for non-premium users) */}
+          {isChatPage && !isPremium && (
+            <button
+              onClick={handleUpgradeClick}
+              className="px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 rounded-full transition-all duration-300 flex items-center gap-1.5 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+              title="Upgrade to Premium"
+            >
+              <Crown className="w-4 h-4 text-yellow-900" />
+              <span className="text-xs font-bold text-yellow-900 hidden sm:inline">Premium</span>
+            </button>
+          )}
+
           {/* Voice Call Button (Visible) */}
           <Link href="/call">
             <button
