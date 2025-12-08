@@ -14,7 +14,20 @@ import analyticsEventsRoutes from "../server/routes/analytics-events";
 
 const app = express();
 
-// Middleware
+// =====================================================
+// HEALTH CHECKS - MUST BE FIRST (before ANY middleware)
+// =====================================================
+// Fast health check for Render deployment (no middleware, instant response)
+app.get("/api/health", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Root health check for Render
+app.get("/", (_req, res) => {
+    res.status(200).json({ status: "ok", service: "riya-ai" });
+});
+
+// Middleware (after health checks)
 app.use(ensureSecretsLoaded);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -37,17 +50,6 @@ app.get("/api/debug", (req, res) => {
             HAS_SUPABASE: !!process.env.SUPABASE_URL
         }
     });
-});
-
-// Health check endpoint - MUST be first route for fast Render health checks
-// Simple and fast - no middleware, no async operations
-app.get("/api/health", (_req, res) => {
-    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-// Root health check for Render
-app.get("/", (_req, res) => {
-    res.status(200).json({ status: "ok", service: "riya-ai" });
 });
 
 // Authentication routes (OTP-based signup/login)
