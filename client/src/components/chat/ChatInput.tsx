@@ -151,8 +151,8 @@ export function ChatInput({
             onClick={handleMicClick}
             disabled={isLoading || disabled}
             className={`p-2.5 sm:p-3 rounded-full transition-all duration-300 flex-shrink-0 ${isRecording
-                ? "bg-gradient-to-r from-red-500 to-pink-500 text-white animate-pulse shadow-lg shadow-red-300/50"
-                : "bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500 hover:from-gray-200 hover:to-gray-100 hover:shadow-md"
+              ? "bg-gradient-to-r from-red-500 to-pink-500 text-white animate-pulse shadow-lg shadow-red-300/50"
+              : "bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500 hover:from-gray-200 hover:to-gray-100 hover:shadow-md"
               }`}
             title={isRecording ? "Stop recording" : "Start recording"}
             data-testid="button-voice-record"
@@ -170,9 +170,13 @@ export function ChatInput({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && handleSend()}
-              placeholder={isLoading ? "Sending..." : "Type your message..."}
+              placeholder={disabled ? "Limit Reached - Upgrade to Chat" : (isLoading ? "Sending..." : "Type your message...")}
               disabled={isLoading || disabled}
-              className="w-full h-10 sm:h-12 px-3 sm:px-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-full text-sm sm:text-base text-foreground placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:from-purple-50 focus:to-pink-50 disabled:opacity-50 transition-all duration-300 shadow-sm focus:shadow-md"
+              className={`w-full h-10 sm:h-12 px-3 sm:px-4 rounded-full text-sm sm:text-base focus:outline-none transition-all duration-300 shadow-sm
+                ${disabled
+                  ? "bg-red-50 text-red-500 placeholder:text-red-400 font-semibold cursor-not-allowed border-2 border-red-100"
+                  : "bg-gradient-to-r from-gray-50 to-gray-100 text-foreground placeholder:text-gray-400 focus:ring-2 focus:ring-purple-400 focus:from-purple-50 focus:to-pink-50 disabled:opacity-50 focus:shadow-md"
+                }`}
               data-testid="input-chat-message"
             />
           </div>
