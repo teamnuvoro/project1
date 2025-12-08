@@ -227,6 +227,8 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
 
     let currentMessages = 0;
     let currentSeconds = 0;
+    let isPremium = false;
+    let subscriptionPlan: string | undefined = undefined;
 
     try {
       // Get current usage
@@ -256,13 +258,43 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
       } else if (error) {
         console.error('[POST /api/user/usage] Supabase error:', error);
       }
+
+      // Also fetch user premium status
+      const { data: userData } = await supabase
+        .from('users')
+        .select('premium_user, subscription_plan, subscription_expiry')
+        .eq('id', userId)
+        .single();
+
+      if (userData) {
+        isPremium = userData.premium_user || false;
+        subscriptionPlan = userData.subscription_plan;
+        
+        // Check if subscription expired
+        if (isPremium && userData.subscription_expiry) {
+          const expiry = new Date(userData.subscription_expiry);
+          const now = new Date();
+          if (expiry < now) {
+            isPremium = false;
+          }
+        }
+      }
     } catch (e) {
-      console.log('[POST /api/user/usage] Using local counters');
+      console.log('[POST /api/user/usage] Using local counters:', e);
     }
 
+    // Calculate message limit
+    const messageLimit = isPremium ? 999999 : 5;
+    const finalMessageCount = currentMessages + (incrementMessages || 0);
+    const messageLimitReached = !isPremium && finalMessageCount >= messageLimit;
+
     res.json({
-      messageCount: currentMessages + (incrementMessages || 0),
-      callDuration: currentSeconds + (incrementCallSeconds || 0)
+      messageCount: finalMessageCount,
+      callDuration: currentSeconds + (incrementCallSeconds || 0),
+      premiumUser: isPremium,
+      subscriptionPlan: subscriptionPlan,
+      messageLimitReached: messageLimitReached,
+      callLimitReached: !isPremium && (currentSeconds + (incrementCallSeconds || 0)) >= 135,
     });
   } catch (error: any) {
     console.error('[POST /api/user/usage] Error:', error);
