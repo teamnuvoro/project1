@@ -295,10 +295,9 @@ export default function ChatPage() {
         // to avoid "pop-in/pop-out" effect due to replication lag.
         queryClient.invalidateQueries({ queryKey: ["/api/user/usage"] });
 
-        // We can refetch messages quietly in the background later if needed
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
-        }, 2000);
+        // DISABLE REFETCH: We trust our manual cache update to keep the UI stable.
+        // This prevents the 'disappearing messages' bug if the DB insert failed or is lagging.
+        // queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
 
         return { success: true, reply: aiResponseText };
 
