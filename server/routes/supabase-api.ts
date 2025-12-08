@@ -144,6 +144,8 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
     // Try to get usage stats - if table doesn't exist, use defaults
     let stats = { total_messages: 0, total_call_seconds: 0 };
     let isPremium = false;
+    let subscriptionPlan: string | undefined = undefined;
+    let user: any = null;
 
     try {
       const { data: usage, error } = await supabase
@@ -158,24 +160,50 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
         console.error('[/api/user/usage] Supabase error:', error);
       }
 
-      const { data: user } = await supabase
+      // Fetch user data to check premium status
+      const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('premium_user, subscription_plan')
+        .select('premium_user, subscription_plan, subscription_expiry')
         .eq('id', userId)
         .single();
 
-      isPremium = user?.premium_user || false;
+      if (!userError && userData) {
+        user = userData;
+        isPremium = userData.premium_user || false;
+        subscriptionPlan = userData.subscription_plan;
+        
+        // Also check if subscription hasn't expired
+        if (isPremium && userData.subscription_expiry) {
+          const expiry = new Date(userData.subscription_expiry);
+          const now = new Date();
+          if (expiry < now) {
+            // Subscription expired, downgrade user
+            console.log(`[User Usage] Subscription expired for user ${userId}, downgrading...`);
+            isPremium = false;
+            await supabase
+              .from('users')
+              .update({ premium_user: false, updated_at: new Date().toISOString() })
+              .eq('id', userId);
+          }
+        }
+      } else if (userError) {
+        console.error('[/api/user/usage] Error fetching user:', userError);
+      }
     } catch (e) {
       // Supabase connection issue - use defaults
-      console.log('[/api/user/usage] Using default stats');
+      console.log('[/api/user/usage] Using default stats:', e);
     }
+
+    // Calculate message limit (5 for free, unlimited for premium)
+    const messageLimit = isPremium ? 999999 : 5;
+    const messageLimitReached = !isPremium && stats.total_messages >= messageLimit;
 
     res.json({
       messageCount: stats.total_messages,
       callDuration: stats.total_call_seconds,
       premiumUser: isPremium,
-      subscriptionPlan: (user as any)?.subscription_plan,
-      messageLimitReached: false, // Disabled for testing
+      subscriptionPlan: subscriptionPlan,
+      messageLimitReached: messageLimitReached,
       callLimitReached: !isPremium && stats.total_call_seconds >= 135,
     });
   } catch (error: any) {

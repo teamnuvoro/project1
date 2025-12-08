@@ -317,7 +317,7 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
         expiry.setTime(expiry.getTime() + 24 * 60 * 60 * 1000);
       }
 
-      await supabase
+      const { data: updatedUser, error: userUpdateError } = await supabase
         .from('users')
         .update({
           premium_user: true,
@@ -325,9 +325,17 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
           subscription_expiry: expiry.toISOString(),
           updated_at: new Date().toISOString()
         })
-        .eq('id', subscription.user_id);
+        .eq('id', subscription.user_id)
+        .select()
+        .single();
 
-      console.log('[Payment] ✅ User upgraded to premium:', subscription.user_id, 'Expiry:', expiry.toISOString());
+      if (userUpdateError) {
+        console.error('[Payment] ❌ Failed to update user premium status:', userUpdateError);
+        // Don't fail the whole request, but log the error
+      } else {
+        console.log('[Payment] ✅ User upgraded to premium:', subscription.user_id, 'Expiry:', expiry.toISOString());
+        console.log('[Payment] ✅ Updated user data:', JSON.stringify(updatedUser, null, 2));
+      }
 
       // INSERT INTO PAYMENTS TABLE (DATA INTEGRITY)
       // Check if payment already exists to avoid duplicates (optional but good)
