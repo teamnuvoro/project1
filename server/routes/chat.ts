@@ -308,29 +308,42 @@ router.post("/api/chat", async (req: Request, res: Response) => {
     }
 
     // --- PAYWALL CHECK START ---
-    // Moved to TOP to prevent 500 errors from blocking Paywall
-    const messageCount = await getUserMessageCount(userId);
-    let isPremium = user?.premium_user || false;
+    let messageCount = 0;
+    try {
+      // Moved to TOP to prevent 500 errors from blocking Paywall
+      messageCount = await getUserMessageCount(userId);
+      let isPremium = false;
 
-    // Check subscription expiry explicitly
-    if (user?.subscription_expiry) {
-      const expiryDate = new Date(user.subscription_expiry);
-      if (expiryDate > new Date()) {
-        isPremium = true;
+      try {
+        // Re-fetch user to get latest premium status (avoid caching issues)
+        const { data: latestUser } = await supabase.from('users').select('premium_user, subscription_expiry').eq('id', userId).single();
+        if (latestUser) {
+          // Logic: Database flag OR Expiry in future
+          const hasValidExpiry = latestUser.subscription_expiry && new Date(latestUser.subscription_expiry) > new Date();
+          isPremium = latestUser.premium_user || hasValidExpiry;
+        }
+      } catch (userErr) {
+        console.warn("[Paywall] Failed to refetch user status:", userErr);
+        // Fallback to the 'user' object from auth middleware if available, or default false
+        isPremium = user?.premium_user || false;
       }
-    }
 
-    if (!isPremium && messageCount >= FREE_MESSAGE_LIMIT) {
-      console.log(`[Paywall] BLOCKED User ${userId}. Count: ${messageCount}`);
-      return res.status(402).json({
-        status: 402,
-        code: "QUOTA_EXHAUSTED",
-        message: "Your daily 20 free chat messages have been used.",
-        offers: [
-          { plan: "daily", price: 19, duration: "24 hours" },
-          { plan: "weekly", price: 49, duration: "7 days" }
-        ]
-      });
+      console.log(`[Paywall Check] User: ${userId}, Count: ${messageCount}, Premium: ${isPremium}`);
+
+      if (!isPremium && messageCount >= FREE_MESSAGE_LIMIT) {
+        console.log(`[Paywall] BLOCKED User ${userId}. Count: ${messageCount}`);
+        return res.status(402).json({
+          status: 402,
+          code: "QUOTA_EXHAUSTED",
+          message: "Your daily 20 free chat messages have been used.",
+          offers: [
+            { plan: "daily", price: 19, duration: "24 hours" },
+            { plan: "weekly", price: 49, duration: "7 days" }
+          ]
+        });
+      }
+    } catch (paywallError) {
+      console.error("[Paywall Logic Error]", paywallError);
     }
     // --- PAYWALL CHECK END ---
 
