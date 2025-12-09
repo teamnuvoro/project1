@@ -142,17 +142,26 @@ export default function ChatPage() {
     queryKey: ["/api/user/usage"],
     queryFn: async () => {
       try {
-        const res = await fetch("/api/user/usage");
+        // Use POST endpoint which returns premium status
+        const res = await fetch("/api/user/usage", {
+          method: "POST",
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
         if (!res.ok) {
           return { messageCount: 0, callDuration: 0, premiumUser: false, messageLimitReached: false, callLimitReached: false };
         }
-        return res.json();
-      } catch {
+        const data = await res.json();
+        console.log('🔄 User usage fetched:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching user usage:', error);
         return { messageCount: 0, callDuration: 0, premiumUser: false, messageLimitReached: false, callLimitReached: false };
       }
     },
-    staleTime: isFromPayment ? 0 : 30000, // Force fresh fetch if coming from payment
-    refetchOnMount: isFromPayment, // Force refetch on mount if from payment
+    staleTime: 0, // Always fetch fresh data
+    refetchOnMount: true, // Always refetch on mount
+    refetchInterval: 5000, // Poll every 5 seconds to catch premium updates
   });
 
   // Force refetch user and usage when coming from payment
@@ -161,12 +170,28 @@ export default function ChatPage() {
       console.log('🔄 Payment success detected - forcing refresh...');
       // Refetch user from auth context
       refetchUser();
-      // Refetch usage
+      // Refetch usage immediately
       refetchUsage();
       // Clean up URL parameter
-      window.history.replaceState({}, '', '/chat');
+      setTimeout(() => {
+        window.history.replaceState({}, '', '/chat');
+      }, 2000);
     }
   }, [isFromPayment, refetchUsage, refetchUser]);
+
+  // Poll for premium status updates (in case payment was processed)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Only poll if user is not premium yet
+      if (!user?.premium_user && !userUsage?.premiumUser) {
+        console.log('🔄 Polling for premium status update...');
+        refetchUser();
+        refetchUsage();
+      }
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [user?.premium_user, userUsage?.premiumUser, refetchUser, refetchUsage]);
 
   const quickReplies = [
     "Mera current relationship confusing hai",
@@ -211,8 +236,18 @@ export default function ChatPage() {
   // If backend is failing (0), we trust local. If backend has data, we trust it.
   const currentCount = Math.max(localCount, backendCount, messages.length);
 
-  // Check premium status
-  const isPremium = user?.premium_user || userUsage?.premiumUser || false;
+  // Check premium status - prioritize userUsage as it's more up-to-date
+  const isPremium = userUsage?.premiumUser || user?.premium_user || false;
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 Premium Status Check:', {
+      userPremium: user?.premium_user,
+      usagePremium: userUsage?.premiumUser,
+      finalPremium: isPremium,
+      userUsage: userUsage
+    });
+  }, [user?.premium_user, userUsage?.premiumUser, isPremium, userUsage]);
 
   // DEBUG: Log status on mount
   useEffect(() => {
@@ -225,8 +260,19 @@ export default function ChatPage() {
     console.log("------------------------------------------");
   }, [localCount, backendCount, currentCount, isPremium]);
 
-  // STRICT LIMIT CHECK
-  const isLimitReached = !isPremium && currentCount >= 20;
+  // STRICT LIMIT CHECK - Only block if NOT premium AND limit reached
+  // For premium users, always allow (unlimited)
+  const isLimitReached = !isPremium && currentCount >= 5; // Changed from 20 to 5 to match backend
+  
+  // Debug limit check
+  useEffect(() => {
+    console.log('🔍 Limit Check:', {
+      isPremium,
+      currentCount,
+      isLimitReached,
+      message: isLimitReached ? '🚫 BLOCKED' : '✅ ALLOWED'
+    });
+  }, [isPremium, currentCount, isLimitReached]);
 
   const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -401,9 +447,9 @@ export default function ChatPage() {
     // 1. Strict Check BEFORE updating
     const currentLocal = getLocalUsage();
     const effectiveCount = Math.max(currentLocal, messages.length);
-    const isPremiumUser = user?.premium_user || userUsage?.premiumUser;
+    const isPremiumUser = userUsage?.premiumUser || user?.premium_user || false;
 
-    if (!isPremiumUser && effectiveCount >= 20) {
+    if (!isPremiumUser && effectiveCount >= 5) {
       console.log("Paywall Hit (Pre-check):", effectiveCount);
       setPaywallOpen(true);
       return;
@@ -423,7 +469,7 @@ export default function ChatPage() {
     });
 
     // 4. Double check AFTER increment (for the 20th message edge case)
-    if (!isPremiumUser && newCount >= 20) {
+    if (!isPremiumUser && newCount >= 5) {
       console.log("Paywall Hit (Post-increment):", newCount);
       // We allow THIS message to send (as the 20th), but open modal for next.
       // Or block immediately if you prefer strictness.
