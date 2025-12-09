@@ -392,6 +392,37 @@ router.post("/api/chat", async (req: Request, res: Response) => {
 
       if (!isPremium && messageCount >= FREE_MESSAGE_LIMIT) {
         console.log(`[Paywall] BLOCKED User ${userId}. Count: ${messageCount}`);
+        
+        // Phase 3: Track paywall_context event
+        if (isSupabaseConfigured) {
+          // Get user's persona
+          const { data: userData } = await supabase
+            .from('users')
+            .select('persona')
+            .eq('id', userId)
+            .single();
+          
+          const personaType = userData?.persona || 'sweet_supportive';
+          
+          // Track paywall_context event
+          await supabase.from('user_events').insert({
+            user_id: userId,
+            event_name: 'paywall_context',
+            event_type: 'track',
+            event_properties: {
+              triggering_message_text: content.substring(0, 200), // First 200 chars
+              session_msg_count: messageCount,
+              persona_type: personaType,
+              message_length: content.length
+            },
+            path: '/chat',
+            created_at: new Date().toISOString()
+          }).catch(err => {
+            console.error('[Analytics] Error tracking paywall_context:', err);
+            // Don't fail the request for analytics errors
+          });
+        }
+        
         return res.status(402).json({
           status: 402,
           code: "QUOTA_EXHAUSTED",

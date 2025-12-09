@@ -34,10 +34,19 @@ export default function UserJourneyPage() {
   const [eventFilter, setEventFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const eventsPerPage = 50;
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [transcriptData, setTranscriptData] = useState<any>(null);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery<{
     recentEvents: Event[];
     uniqueUserIds: string[];
+    pagination?: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
   }>({
     queryKey: ['/api/admin/journey', days, selectedUserId, searchQuery, eventFilter, currentPage, user?.id],
     queryFn: async () => {
@@ -61,24 +70,11 @@ export default function UserJourneyPage() {
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
-  // Filter events
-  const filteredEvents = data?.recentEvents?.filter(event => {
-    const matchesSearch = !searchQuery || 
-      event.event_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.event_place.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.user_id.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesEventFilter = eventFilter === 'all' || event.event_name === eventFilter;
-    
-    return matchesSearch && matchesEventFilter;
-  }) || [];
-
-  // Pagination
-  const totalPages = Math.ceil(filteredEvents.length / eventsPerPage);
-  const paginatedEvents = filteredEvents.slice(
-    (currentPage - 1) * eventsPerPage,
-    currentPage * eventsPerPage
-  );
+  // Server-side filtering is now handled by the API
+  // Client-side filtering is minimal (just for display)
+  const filteredEvents = data?.recentEvents || [];
+  const paginatedEvents = filteredEvents;
+  const totalPages = data?.pagination?.totalPages || 1;
 
   // Get unique event names for filter
   const uniqueEventNames = Array.from(new Set(data?.recentEvents?.map(e => e.event_name) || [])).sort();
@@ -247,7 +243,42 @@ export default function UserJourneyPage() {
                         </button>
                       </td>
                       <td className="p-4 font-medium">
-                        <code className="text-xs bg-muted px-2 py-1 rounded">{event.event_name}</code>
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs bg-muted px-2 py-1 rounded">{event.event_name}</code>
+                          {event.event_name === 'message_sent' && event.event_data?.session_id && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const response = await fetch(`/api/admin/session/${event.event_data.session_id}/transcript`, {
+                                    headers: { 'Content-Type': 'application/json' }
+                                  });
+                                  if (response.ok) {
+                                    const data = await response.json();
+                                    setTranscriptData(data);
+                                    setSelectedSessionId(event.event_data.session_id);
+                                    setShowTranscriptModal(true);
+                                  } else {
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to load transcript",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                } catch (err) {
+                                  toast({
+                                    title: "Error",
+                                    description: "Failed to load transcript",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }}
+                              className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded"
+                              title="View conversation transcript"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4">
                         <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${getScreenColor(event.event_place, event.event_name)}`}>
@@ -318,6 +349,52 @@ export default function UserJourneyPage() {
             </div>
           )}
         </Card>
+
+        {/* Transcript Modal */}
+        <Dialog open={showTranscriptModal} onOpenChange={setShowTranscriptModal}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between">
+                <span>Conversation Transcript</span>
+                <button
+                  onClick={() => setShowTranscriptModal(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </DialogTitle>
+              <DialogDescription>
+                Session: {selectedSessionId?.substring(0, 12)}...
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 space-y-3">
+              {transcriptData?.transcript && transcriptData.transcript.length > 0 ? (
+                transcriptData.transcript.map((msg: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-lg ${
+                      msg.role === 'user'
+                        ? 'bg-blue-50 ml-8 border-l-4 border-blue-500'
+                        : 'bg-purple-50 mr-8 border-l-4 border-purple-500'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold uppercase text-muted-foreground">
+                        {msg.role === 'user' ? '👤 User' : '🤖 Riya'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-muted-foreground py-8">No transcript available</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
