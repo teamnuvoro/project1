@@ -216,6 +216,33 @@ export function TopNavbar() {
                       </button>
                     </Link>
 
+                    {/* Admin Analytics - Only show if user is admin */}
+                    {(user as any)?.is_admin && (
+                      <>
+                        <div className="h-px bg-gray-100 my-1 mx-4"></div>
+                        <Link href="/admin/analytics">
+                          <button
+                            onClick={() => {
+                              analytics.track('navbar_click', {
+                                destination: 'admin_analytics',
+                                user_type: user?.premium_user ? 'premium' : 'free'
+                              });
+                              setIsDropdownOpen(false);
+                            }}
+                            className="w-full px-4 py-3 text-left text-blue-700 hover:bg-blue-50 transition-colors flex items-center gap-3 group"
+                          >
+                            <div className="p-2 bg-blue-100 rounded-full group-hover:bg-blue-200 transition-colors">
+                              <BarChart3 className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-medium text-sm">Admin Analytics</span>
+                              <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wide">Dashboard</span>
+                            </div>
+                          </button>
+                        </Link>
+                      </>
+                    )}
+
                     <div className="h-px bg-gray-100 my-1 mx-4"></div>
 
                     {/* Logout */}
