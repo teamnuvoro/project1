@@ -352,8 +352,8 @@ export default function AdminAnalytics() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="h-full w-full overflow-y-auto bg-background p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-6 pb-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex-1">
@@ -603,7 +603,8 @@ export default function AdminAnalytics() {
             </div>
           </div>
           <div className="overflow-x-auto border rounded-lg">
-            <table className="w-full text-sm">
+            <div className="max-h-[70vh] overflow-y-auto">
+              <table className="w-full text-sm">
               <thead className="bg-muted/50">
                 <tr className="border-b">
                   <th className="text-left p-3 font-semibold sticky left-0 bg-muted/50 z-10">Time</th>

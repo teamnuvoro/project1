@@ -29,7 +29,7 @@ export function ProtectedLayout({ children, showNavbar = true }: ProtectedLayout
     return (
         <div className="flex flex-col h-[100dvh] w-full bg-background">
             {showNavbar && <TopNavbar />}
-            <div className="flex-1 overflow-hidden" style={{ marginTop: showNavbar ? '60px' : '0' }}>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ marginTop: showNavbar ? '60px' : '0' }}>
                 {children}
             </div>
         </div>
