@@ -11,29 +11,112 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, BarChart3, TrendingUp, Users, DollarSign, Lock } from "lucide-react";
+import { Loader2, BarChart3, TrendingUp, Users, DollarSign, Lock, Clock, RefreshCw, User, PieChart } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
-// Event translation map
+// Comprehensive Event Translation Map (from Tracking Plan)
 const EVENT_TRANSLATIONS: Record<string, string> = {
-  chat_sent: "The user successfully sent a message to Riya. Measures core product usage.",
-  tip_clicked: "The user engaged with a suggested conversation starter (e.g., 'Tell me about your day'). Measures engagement with the prompt helpers.",
-  login_otp_success: "The user successfully logged into the app. Measures successful authentication.",
-  paywall_triggered: "The user hit their free message limit and saw the upgrade popup. Key trigger for conversion funnel.",
-  pay_daily_selected: "The user clicked the ₹19 'Daily Pass' button on the paywall. Measures purchase intent for the cheapest plan.",
-  pay_weekly_selected: "The user clicked the ₹49 'Weekly Pass' button on the paywall. Measures purchase intent for the premium plan.",
-  profile_edit_attempt: "The user clicked the button to edit their own profile information. Measures user investment in their account.",
-  session_start: "The user opened the application for the first time in a session. Measures daily user load.",
-  voice_call_started: "The user initiated a voice call with Riya.",
-  voice_call_ended: "The user ended a voice call with Riya.",
-  payment_successful: "The user completed a payment successfully.",
-  payment_failed: "The user's payment attempt failed.",
+  // Authentication & Onboarding
+  login_successful: "User logged in successfully.",
+  login_otp_success: "User successfully logged into the app. Measures successful authentication.",
+  returning_user_login: "User came back after 24h!",
+  signup_started: "User started the signup process.",
+  otp_verified: "User verified their phone number with OTP.",
+  daily_active_user: "User was active today.",
+  
+  // Persona Selection
+  persona_selected: "User chose their AI type.",
+  persona_selection: "User selected a persona type.",
+  persona_alignment_viewed: "User viewed persona alignment information.",
+  
+  // Chat & Messaging
+  chat_sent: "User successfully sent a message to Riya. Measures core product usage.",
+  message_sent: "User sent a chat message.",
+  chat_opened: "User opened the chat interface.",
+  tip_clicked: "User engaged with a suggested conversation starter.",
+  free_message_warning_shown: "User saw the 18-msg warning.",
+  message_limit_hit: "PAYWALL TRIGGERED (20 Msgs).",
+  paywall_triggered: "User hit their free message limit and saw the upgrade popup. Key trigger for conversion funnel.",
+  
+  // Payments & Conversion
+  pay_daily_selected: "User clicked the ₹19 'Daily Pass' button on the paywall.",
+  pay_weekly_selected: "User clicked the ₹49 'Weekly Pass' button on the paywall.",
+  payment_successful: "User completed a payment successfully.",
+  payment_failed: "User's payment attempt failed.",
+  
+  // Features & CTAs
+  cta_voice_call_clicked: "User tried to start a voice call.",
+  cta_summary_clicked: "User clicked to view summary.",
+  voice_call_started: "User initiated a voice call with Riya.",
+  voice_call_ended: "User ended a voice call with Riya.",
+  
+  // Session & Engagement
+  session_start: "User opened the application for the first time in a session.",
+  session_length_recorded: "Session length was recorded.",
+  profile_edit_attempt: "User clicked the button to edit their own profile information.",
 };
+
+// Get event explanation with property details
+function getEventExplanation(eventName: string, eventData?: any): string {
+  const baseExplanation = EVENT_TRANSLATIONS[eventName] || `Technical event: ${eventName}`;
+  
+  // Add property details if available
+  if (eventData) {
+    const details: string[] = [];
+    
+    if (eventData.persona_type) details.push(`Persona: ${eventData.persona_type}`);
+    if (eventData.message_count !== undefined) details.push(`Messages: ${eventData.message_count}`);
+    if (eventData.total_messages_sent !== undefined) details.push(`Total: ${eventData.total_messages_sent}`);
+    if (eventData.session_length_sec) details.push(`Session: ${Math.round(eventData.session_length_sec / 60)}min`);
+    if (eventData.placement) details.push(`Placement: ${eventData.placement}`);
+    if (eventData.days_since_last_session) details.push(`Days since last: ${eventData.days_since_last_session}`);
+    if (eventData.returning_user) details.push(`Returning: ${eventData.returning_user ? 'Yes' : 'No'}`);
+    
+    if (details.length > 0) {
+      return `${baseExplanation} (${details.join(', ')})`;
+    }
+  }
+  
+  return baseExplanation;
+}
+
+// Get screen color based on event place/name
+function getScreenColor(eventPlace: string, eventName: string): string {
+  const place = (eventPlace || '').toLowerCase();
+  const name = (eventName || '').toLowerCase();
+  
+  if (place.includes('chat') || name.includes('message') || name.includes('chat')) {
+    return 'bg-blue-100 text-blue-700 border-blue-200';
+  }
+  if (place.includes('paywall') || name.includes('paywall') || name.includes('limit')) {
+    return 'bg-red-100 text-red-700 border-red-200';
+  }
+  if (place.includes('onboard') || name.includes('signup') || name.includes('persona')) {
+    return 'bg-purple-100 text-purple-700 border-purple-200';
+  }
+  if (name.includes('payment') || name.includes('pay_')) {
+    return 'bg-green-100 text-green-700 border-green-200';
+  }
+  return 'bg-gray-100 text-gray-700 border-gray-200';
+}
 
 interface AnalyticsData {
   metrics: {
+    // Pulse Cards
+    dailyActiveUsers: number;
+    retentionRate: number;
+    paywallEfficiency: number;
+    avgSessionTime: number;
+    // Legacy
     totalActiveUsers: number;
     conversionRate: number;
     highestTrafficPage: string;
@@ -46,6 +129,21 @@ interface AnalyticsData {
       days: number;
     };
   };
+  // Charts data
+  personaPopularity: Array<{ persona: string; count: number }>;
+  conversionFunnel: {
+    signup_started: number;
+    otp_verified: number;
+    persona_selected: number;
+    chat_opened: number;
+    message_limit_hit: number;
+  };
+  featureUsage: {
+    voice_call_clicked: number;
+    summary_clicked: number;
+    persona_alignment_viewed: number;
+  };
+  // Tables
   recentEvents: Array<{
     event_time: string;
     user_id: string;
@@ -55,6 +153,9 @@ interface AnalyticsData {
   }>;
   top5EventNames: Array<{ name: string; count: number }>;
   top5EventPlaces: Array<{ place: string; count: number }>;
+  // User list
+  uniqueUserIds: string[];
+  // Raw data
   rawData: {
     eventsCount: number;
     sessionsCount: number;
@@ -72,6 +173,7 @@ export default function AdminAnalytics() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [days, setDays] = useState(7);
+  const [selectedUserId, setSelectedUserId] = useState<string>('all'); // 'all' for global view
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [password, setPassword] = useState('');
@@ -123,12 +225,13 @@ export default function AdminAnalytics() {
   };
 
   const { data, isLoading, error, refetch } = useQuery<AnalyticsData>({
-    queryKey: ['/api/admin/analytics', days, user?.id],
+    queryKey: ['/api/admin/analytics', days, selectedUserId, user?.id],
     queryFn: async () => {
       if (!user?.id) {
         throw new Error('User not authenticated');
       }
-      const response = await fetch(`/api/admin/analytics?days=${days}&userId=${user.id}`, {
+      const url = `/api/admin/analytics?days=${days}&userId=${user.id}${selectedUserId !== 'all' ? `&filterUserId=${selectedUserId}` : ''}`;
+      const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
         }
@@ -149,9 +252,7 @@ export default function AdminAnalytics() {
     enabled: !!user?.id && isAuthenticated, // Only fetch if user is logged in AND password authenticated
   });
 
-  const getEventExplanation = (eventName: string): string => {
-    return EVENT_TRANSLATIONS[eventName] || `Technical event: ${eventName}`;
-  };
+  // getEventExplanation is now defined above with property details support
 
   // Password Dialog
   if (showPasswordDialog && !isAuthenticated) {
@@ -246,7 +347,7 @@ export default function AdminAnalytics() {
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
+          <div className="flex-1">
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-semibold">
@@ -256,9 +357,30 @@ export default function AdminAnalytics() {
             <p className="text-muted-foreground mt-1">
               Data from {new Date(data.metrics.dateRange.start).toLocaleDateString()} to{' '}
               {new Date(data.metrics.dateRange.end).toLocaleDateString()} ({data.metrics.dateRange.days} days)
+              {selectedUserId !== 'all' && (
+                <span className="ml-2 text-blue-600 font-medium">
+                  • Viewing user: {selectedUserId.substring(0, 8)}...
+                </span>
+              )}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {/* User Selector */}
+            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+              <SelectTrigger className="w-[200px]">
+                <User className="w-4 h-4 mr-2" />
+                <SelectValue placeholder="Select user" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users (Global View)</SelectItem>
+                {data.uniqueUserIds?.map((userId) => (
+                  <SelectItem key={userId} value={userId}>
+                    {userId.substring(0, 12)}...
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
             <Button
               variant={days === 7 ? "default" : "outline"}
               size="sm"
@@ -273,7 +395,8 @@ export default function AdminAnalytics() {
             >
               30 Days
             </Button>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
             <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -283,121 +406,235 @@ export default function AdminAnalytics() {
           </div>
         </div>
 
-        {/* Section A: Key Metrics */}
+        {/* Section 1: The "Pulse" Cards (Global View) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-6">
+          <Card className="p-6 border-l-4 border-l-blue-500">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Active Users</p>
-                <p className="text-3xl font-bold mt-2">{data.metrics.totalActiveUsers}</p>
+                <p className="text-sm font-medium text-muted-foreground">Active Users (DAU)</p>
+                <p className="text-3xl font-bold mt-2">{data.metrics.dailyActiveUsers || data.metrics.totalActiveUsers}</p>
                 <p className="text-xs text-muted-foreground mt-1">Last {days} days</p>
               </div>
               <Users className="w-10 h-10 text-blue-500" />
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="p-6 border-l-4 border-l-green-500">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Conversion Rate</p>
-                <p className="text-3xl font-bold mt-2">{data.metrics.conversionRate.toFixed(1)}%</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {data.metrics.successfulPayments} / {data.metrics.paywallHits} paywall hits
+                <p className="text-sm font-medium text-muted-foreground">Retention Rate</p>
+                <p className="text-3xl font-bold mt-2">{data.metrics.retentionRate?.toFixed(1) || '0.0'}%</p>
+                <p className={`text-xs mt-1 ${(data.metrics.retentionRate || 0) > 20 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                  {(data.metrics.retentionRate || 0) > 20 ? '✓ Good' : 'Returning users'}
                 </p>
               </div>
               <TrendingUp className="w-10 h-10 text-green-500" />
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="p-6 border-l-4 border-l-yellow-500">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Highest Traffic</p>
-                <p className="text-lg font-bold mt-2 truncate">{data.metrics.highestTrafficPage}</p>
-                <p className="text-xs text-muted-foreground mt-1">Most visited page</p>
-              </div>
-              <BarChart3 className="w-10 h-10 text-purple-500" />
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Paywall Hits</p>
-                <p className="text-3xl font-bold mt-2">{data.metrics.paywallHits}</p>
-                <p className="text-xs text-muted-foreground mt-1">Total triggers</p>
+                <p className="text-sm font-medium text-muted-foreground">Paywall Efficiency</p>
+                <p className="text-3xl font-bold mt-2">{data.metrics.paywallEfficiency?.toFixed(1) || '0.0'}%</p>
+                <p className="text-xs text-muted-foreground mt-1">Selection rate</p>
               </div>
               <DollarSign className="w-10 h-10 text-yellow-500" />
             </div>
           </Card>
+
+          <Card className="p-6 border-l-4 border-l-purple-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Avg. Session Time</p>
+                <p className="text-3xl font-bold mt-2">
+                  {data.metrics.avgSessionTime ? `${Math.round(data.metrics.avgSessionTime / 60)}m` : '0m'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Average duration</p>
+              </div>
+              <Clock className="w-10 h-10 text-purple-500" />
+            </div>
+          </Card>
         </div>
 
-        {/* Section B: Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Section 2: Engagement Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Chart A: Persona Popularity (Pie Chart) */}
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Top 5 Event Names</h2>
-            <div className="space-y-3">
-              {data.top5EventNames.map((item, index) => (
-                <div key={item.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="text-sm font-medium text-muted-foreground w-6">{index + 1}.</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.name}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {getEventExplanation(item.name)}
-                      </p>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <PieChart className="w-5 h-5" />
+              Persona Popularity
+            </h2>
+            {data.personaPopularity && data.personaPopularity.length > 0 ? (
+              <div className="space-y-3">
+                {data.personaPopularity.map((item, index) => {
+                  const total = data.personaPopularity.reduce((sum, p) => sum + p.count, 0);
+                  const percentage = total > 0 ? (item.count / total) * 100 : 0;
+                  const colors = ['bg-blue-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500'];
+                  return (
+                    <div key={item.persona} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium capitalize">{item.persona || 'Unknown'}</span>
+                        <span className="text-sm font-bold">{item.count} ({percentage.toFixed(1)}%)</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`${colors[index % colors.length]} h-2 rounded-full transition-all`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-lg font-bold ml-4">{item.count}</span>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">No persona selections yet</p>
+            )}
           </Card>
 
+          {/* Chart B: Conversion Funnel (Bar Chart) */}
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Top 5 Event Places</h2>
-            <div className="space-y-3">
-              {data.top5EventPlaces.map((item, index) => (
-                <div key={item.place} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="text-sm font-medium text-muted-foreground w-6">{index + 1}.</span>
-                    <p className="text-sm font-medium truncate flex-1">{item.place}</p>
-                  </div>
-                  <span className="text-lg font-bold ml-4">{item.count}</span>
-                </div>
-              ))}
-            </div>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" />
+              Conversion Funnel
+            </h2>
+            {data.conversionFunnel ? (
+              <div className="space-y-3">
+                {[
+                  { label: 'Signup Started', value: data.conversionFunnel.signup_started },
+                  { label: 'OTP Verified', value: data.conversionFunnel.otp_verified },
+                  { label: 'Persona Selected', value: data.conversionFunnel.persona_selected },
+                  { label: 'Chat Opened', value: data.conversionFunnel.chat_opened },
+                  { label: 'Paywall Hit', value: data.conversionFunnel.message_limit_hit },
+                ].map((step, index) => {
+                  const maxValue = Math.max(...[
+                    data.conversionFunnel.signup_started,
+                    data.conversionFunnel.otp_verified,
+                    data.conversionFunnel.persona_selected,
+                    data.conversionFunnel.chat_opened,
+                    data.conversionFunnel.message_limit_hit,
+                  ]);
+                  const percentage = maxValue > 0 ? (step.value / maxValue) * 100 : 0;
+                  return (
+                    <div key={step.label} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{step.label}</span>
+                        <span className="text-sm font-bold">{step.value}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">No funnel data yet</p>
+            )}
+          </Card>
+
+          {/* Chart C: Feature Usage (Horizontal Bars) */}
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Feature Usage
+            </h2>
+            {data.featureUsage ? (
+              <div className="space-y-4">
+                {[
+                  { label: 'Voice Call Clicked', value: data.featureUsage.voice_call_clicked },
+                  { label: 'Summary Clicked', value: data.featureUsage.summary_clicked },
+                  { label: 'Persona Alignment Viewed', value: data.featureUsage.persona_alignment_viewed },
+                ].map((feature) => {
+                  const maxValue = Math.max(
+                    data.featureUsage.voice_call_clicked,
+                    data.featureUsage.summary_clicked,
+                    data.featureUsage.persona_alignment_viewed
+                  );
+                  const percentage = maxValue > 0 ? (feature.value / maxValue) * 100 : 0;
+                  return (
+                    <div key={feature.label} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{feature.label}</span>
+                        <span className="text-sm font-bold">{feature.value}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-500 h-2 rounded-full transition-all"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">No feature usage data yet</p>
+            )}
           </Card>
         </div>
 
-        {/* Section C: Recent Events Table */}
+        {/* Section 3: The "User Journey" Table (Drill-Down Focus) */}
         <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Recent User Events (Last 50)</h2>
+          <h2 className="text-xl font-semibold mb-4">
+            User Journey Table
+            {selectedUserId !== 'all' && (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                (Filtered for selected user)
+              </span>
+            )}
+          </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
                   <th className="text-left p-2 font-semibold">Time</th>
-                  <th className="text-left p-2 font-semibold">User ID</th>
                   <th className="text-left p-2 font-semibold">Event Name</th>
-                  <th className="text-left p-2 font-semibold">Place</th>
-                  <th className="text-left p-2 font-semibold">Explanation</th>
+                  <th className="text-left p-2 font-semibold">Screen</th>
+                  <th className="text-left p-2 font-semibold">Layman's Explanation</th>
+                  <th className="text-left p-2 font-semibold">Details (Properties)</th>
                 </tr>
               </thead>
               <tbody>
-                {data.recentEvents.map((event, index) => (
-                  <tr key={index} className="border-b hover:bg-muted/50">
-                    <td className="p-2 text-xs">
-                      {new Date(event.event_time).toLocaleString()}
-                    </td>
-                    <td className="p-2 font-mono text-xs">{event.user_id}</td>
-                    <td className="p-2 font-medium">{event.event_name}</td>
-                    <td className="p-2 text-muted-foreground">{event.event_place || 'N/A'}</td>
-                    <td className="p-2 text-xs text-muted-foreground max-w-md">
-                      {getEventExplanation(event.event_name)}
+                {data.recentEvents && data.recentEvents.length > 0 ? (
+                  data.recentEvents.map((event, index) => (
+                    <tr key={index} className="border-b hover:bg-muted/50 transition-colors">
+                      <td className="p-2 text-xs font-mono">
+                        {new Date(event.event_time).toLocaleString()}
+                      </td>
+                      <td className="p-2 font-medium">{event.event_name}</td>
+                      <td className="p-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getScreenColor(event.event_place, event.event_name)}`}>
+                          {event.event_place || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs max-w-md">
+                        {getEventExplanation(event.event_name, event.event_data)}
+                      </td>
+                      <td className="p-2 text-xs font-mono text-muted-foreground max-w-xs">
+                        {event.event_data && Object.keys(event.event_data).length > 0 ? (
+                          <details className="cursor-pointer">
+                            <summary className="text-blue-600 hover:text-blue-800">View properties</summary>
+                            <pre className="mt-1 text-[10px] bg-gray-50 p-2 rounded overflow-auto">
+                              {JSON.stringify(event.event_data, null, 2)}
+                            </pre>
+                          </details>
+                        ) : (
+                          <span className="text-muted-foreground">No properties</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                      No events found for the selected time period{selectedUserId !== 'all' ? ' and user' : ''}.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

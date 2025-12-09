@@ -66,17 +66,25 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
 
     // Get date range (default: last 7 days)
     const days = parseInt(req.query.days as string) || 7;
+    const userId = req.query.userId as string | undefined; // Optional user filter
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     const startDateISO = startDate.toISOString();
 
-    // Fetch user events
-    const { data: events, error: eventsError } = await supabase
+    // Build query for user events
+    const filterUserId = req.query.filterUserId as string | undefined;
+    let eventsQuery = supabase
       .from('user_events')
       .select('*')
       .gte('event_time', startDateISO)
-      .order('event_time', { ascending: false })
-      .limit(1000); // Limit to prevent huge responses
+      .order('event_time', { ascending: false });
+
+    // Filter by user if specified (for drill-down view)
+    if (filterUserId && filterUserId !== 'all') {
+      eventsQuery = eventsQuery.eq('user_id', filterUserId);
+    }
+
+    const { data: events, error: eventsError } = await eventsQuery.limit(5000); // Increased limit for detailed analytics
 
     if (eventsError) {
       console.error('[Admin Analytics] Error fetching events:', eventsError);
@@ -113,12 +121,40 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
       console.error('[Admin Analytics] Error fetching payments:', paymentsError);
     }
 
-    // Calculate metrics
+    // Calculate metrics based on tracking plan events
     const uniqueUsers = new Set(sessions?.map(s => s.user_id) || []);
     const totalActiveUsers = uniqueUsers.size;
 
-    // Count paywall triggers
-    const paywallHits = events?.filter(e => e.event_name === 'paywall_triggered').length || 0;
+    // DAU: Count unique users with daily_active_user event
+    const dailyActiveUsers = new Set(
+      events?.filter(e => e.event_name === 'daily_active_user' || e.event_name === 'session_start').map(e => e.user_id) || []
+    ).size;
+
+    // Retention: returning_user_login events
+    const returningUserLogins = events?.filter(e => e.event_name === 'returning_user_login' || e.event_name === 'login_successful').length || 0;
+    const totalLogins = events?.filter(e => e.event_name === 'login_successful' || e.event_name === 'login_otp_success').length || 0;
+    const retentionRate = totalLogins > 0 ? (returningUserLogins / totalLogins) * 100 : 0;
+
+    // Paywall Efficiency: pay_daily_selected + pay_weekly_selected / paywall_triggered
+    const paywallHits = events?.filter(e => 
+      e.event_name === 'paywall_triggered' || 
+      e.event_name === 'message_limit_hit' ||
+      e.event_name === 'free_message_warning_shown'
+    ).length || 0;
+    const paywallSelections = events?.filter(e => 
+      e.event_name === 'pay_daily_selected' || 
+      e.event_name === 'pay_weekly_selected'
+    ).length || 0;
+    const paywallEfficiency = paywallHits > 0 ? (paywallSelections / paywallHits) * 100 : 0;
+
+    // Avg Session Time: from session_length_recorded events
+    const sessionLengthEvents = events?.filter(e => e.event_name === 'session_length_recorded') || [];
+    const sessionLengths = sessionLengthEvents
+      .map(e => e.event_data?.session_length_sec || e.event_data?.sessionLength || 0)
+      .filter(len => len > 0);
+    const avgSessionTime = sessionLengths.length > 0
+      ? Math.round(sessionLengths.reduce((a, b) => a + b, 0) / sessionLengths.length)
+      : 0;
 
     // Count successful payments
     const successfulPayments = payments?.filter(p => p.status === 'success').length || 0;
@@ -152,19 +188,65 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
       .slice(0, 5)
       .map(([place, count]) => ({ place, count }));
 
-    // Get recent 50 events
-    const recentEvents = (events || []).slice(0, 50).map(event => ({
+    // Persona Popularity: Group by persona_type from persona_selected events
+    const personaCounts: Record<string, number> = {};
+    events?.forEach(event => {
+      if (event.event_name === 'persona_selected' || event.event_name === 'persona_selection') {
+        const personaType = event.event_data?.persona_type || event.event_data?.persona || 'unknown';
+        personaCounts[personaType] = (personaCounts[personaType] || 0) + 1;
+      }
+    });
+    const personaPopularity = Object.entries(personaCounts)
+      .map(([persona, count]) => ({ persona, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // Conversion Funnel: Step-by-step counts
+    const funnelSteps = {
+      signup_started: events?.filter(e => e.event_name === 'signup_started' || e.event_name === 'signup_initiated').length || 0,
+      otp_verified: events?.filter(e => e.event_name === 'otp_verified' || e.event_name === 'login_otp_success').length || 0,
+      persona_selected: events?.filter(e => e.event_name === 'persona_selected' || e.event_name === 'persona_selection').length || 0,
+      chat_opened: events?.filter(e => e.event_name === 'chat_opened' || e.event_name === 'session_start').length || 0,
+      message_limit_hit: paywallHits,
+    };
+
+    // Feature Usage: Count specific interaction events
+    const featureUsage = {
+      voice_call_clicked: events?.filter(e => e.event_name === 'cta_voice_call_clicked' || e.event_name === 'voice_call_started').length || 0,
+      summary_clicked: events?.filter(e => e.event_name === 'cta_summary_clicked' || e.event_name === 'summary_viewed').length || 0,
+      persona_alignment_viewed: events?.filter(e => e.event_name === 'persona_alignment_viewed' || e.event_name === 'persona_info_viewed').length || 0,
+    };
+
+    // Get unique user IDs for dropdown
+    const uniqueUserIds = Array.from(new Set(events?.map(e => e.user_id).filter(Boolean) || []))
+      .sort()
+      .slice(0, 100); // Limit to 100 users for dropdown
+
+    // Get recent events (up to 200 for user journey table)
+    const filterUserId = req.query.filterUserId as string | undefined;
+    let filteredEvents = events || [];
+    if (filterUserId && filterUserId !== 'all') {
+      filteredEvents = filteredEvents.filter(e => e.user_id === filterUserId);
+    }
+    
+    const recentEvents = filteredEvents.slice(0, 200).map(event => ({
       event_time: event.event_time,
-      user_id: event.user_id ? `${event.user_id.substring(0, 8)}...` : 'N/A', // Anonymize
+      user_id: event.user_id || 'N/A',
       event_name: event.event_name,
-      event_place: event.event_place,
-      event_data: event.event_data
+      event_place: event.event_place || event.event_data?.screen || 'N/A',
+      event_data: event.event_data || {}
     }));
 
     res.json({
       metrics: {
+        // Pulse Cards (Global View)
+        dailyActiveUsers,
+        retentionRate: Math.round(retentionRate * 100) / 100,
+        paywallEfficiency: Math.round(paywallEfficiency * 100) / 100,
+        avgSessionTime, // in seconds
+        
+        // Legacy metrics (for backward compatibility)
         totalActiveUsers,
-        conversionRate: Math.round(conversionRate * 100) / 100, // Round to 2 decimals
+        conversionRate: Math.round(conversionRate * 100) / 100,
         highestTrafficPage,
         paywallHits,
         successfulPayments,
@@ -175,9 +257,20 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
           days
         }
       },
+      // Charts data
+      personaPopularity,
+      conversionFunnel: funnelSteps,
+      featureUsage,
+      
+      // Tables
       recentEvents,
       top5EventNames,
       top5EventPlaces,
+      
+      // User list for dropdown
+      uniqueUserIds,
+      
+      // Raw data
       rawData: {
         eventsCount: events?.length || 0,
         sessionsCount: sessions?.length || 0,
