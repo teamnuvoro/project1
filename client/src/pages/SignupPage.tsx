@@ -20,6 +20,7 @@ import { Loader2, Sparkles, ArrowLeft, CheckCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { OTPInput } from "@/components/OTPInput";
+import { trackSignupStarted, trackOtpVerified } from "@/utils/amplitudeTracking";
 
 const signupSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -139,6 +140,9 @@ export default function SignupPage() {
       return response.json();
     },
     onSuccess: (data) => {
+      // Track OTP verified
+      trackOtpVerified(1);
+      
       // Store session token
       if (data.sessionToken) {
         localStorage.setItem('sessionToken', data.sessionToken);
@@ -168,6 +172,8 @@ export default function SignupPage() {
   });
 
   const onSubmitSignup = (data: SignupFormData) => {
+    // Track signup started
+    trackSignupStarted('web');
     sendOTPMutation.mutate(data);
   };
 

@@ -20,6 +20,7 @@ import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import { OTPInput } from "@/components/OTPInput";
 import { useAuth } from "@/contexts/AuthContext";
+import { trackLoginSuccessful, trackOtpVerified, trackReturningUserLogin } from "@/utils/amplitudeTracking";
 
 const loginSchema = z.object({
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits"),
@@ -120,6 +121,23 @@ export default function LoginPage() {
       return response.json();
     },
     onSuccess: (data) => {
+      // Track OTP verified
+      trackOtpVerified(1);
+      
+      // Check if returning user (has previous sessions)
+      const isReturningUser = data.user?.created_at ? 
+        (Date.now() - new Date(data.user.created_at).getTime()) > 24 * 60 * 60 * 1000 : false;
+      
+      // Track login successful
+      trackLoginSuccessful(isReturningUser, data.user.id);
+      
+      // Track returning user login if applicable
+      if (isReturningUser) {
+        const daysSinceLastSession = data.user?.last_login_at ? 
+          Math.floor((Date.now() - new Date(data.user.last_login_at).getTime()) / (24 * 60 * 60 * 1000)) : 0;
+        trackReturningUserLogin(daysSinceLastSession);
+      }
+      
       // Store session token
       if (data.sessionToken) {
         localStorage.setItem('sessionToken', data.sessionToken);

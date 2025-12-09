@@ -137,12 +137,19 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
 
     // Retention: returning_user_login events
     const returningUserLogins = events?.filter(e => {
-      const name = e.event_name || e.event_type;
-      return name === 'returning_user_login' || name === 'login_successful';
+      const name = (e.event_name || e.event_type || '').toLowerCase();
+      const eventData = e.event_data || e.event_properties || e.metadata || {};
+      return name === 'returning_user_login' || 
+             name === 'login_successful' || 
+             (name === 'login_completed' && eventData.returning_user === true) ||
+             (name === 'login_successful' && eventData.returning_user === true);
     }).length || 0;
     const totalLogins = events?.filter(e => {
-      const name = e.event_name || e.event_type;
-      return name === 'login_successful' || name === 'login_otp_success';
+      const name = (e.event_name || e.event_type || '').toLowerCase();
+      return name === 'login_successful' || 
+             name === 'login_otp_success' || 
+             name === 'login_completed' ||
+             name === 'otp_verified';
     }).length || 0;
     const retentionRate = totalLogins > 0 ? (returningUserLogins / totalLogins) * 100 : 0;
 
@@ -224,22 +231,23 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
       .sort((a, b) => b.count - a.count);
 
     // Conversion Funnel: Step-by-step counts
+    // Look for multiple event name variations
     const funnelSteps = {
       signup_started: events?.filter(e => {
-        const name = e.event_name || e.event_type;
-        return name === 'signup_started' || name === 'signup_initiated';
+        const name = (e.event_name || e.event_type || '').toLowerCase();
+        return name === 'signup_started' || name === 'signup_initiated' || name === 'signup_completed';
       }).length || 0,
       otp_verified: events?.filter(e => {
-        const name = e.event_name || e.event_type;
-        return name === 'otp_verified' || name === 'login_otp_success';
+        const name = (e.event_name || e.event_type || '').toLowerCase();
+        return name === 'otp_verified' || name === 'login_otp_success' || name === 'otp_sent';
       }).length || 0,
       persona_selected: events?.filter(e => {
-        const name = e.event_name || e.event_type;
-        return name === 'persona_selected' || name === 'persona_selection';
+        const name = (e.event_name || e.event_type || '').toLowerCase();
+        return name === 'persona_selected' || name === 'persona_selection' || name === 'persona_selection_opened';
       }).length || 0,
       chat_opened: events?.filter(e => {
-        const name = e.event_name || e.event_type;
-        return name === 'chat_opened' || name === 'session_start';
+        const name = (e.event_name || e.event_type || '').toLowerCase();
+        return name === 'chat_opened' || name === 'session_start' || name === 'session_started' || name === 'login_completed';
       }).length || 0,
       message_limit_hit: paywallHits,
     };
