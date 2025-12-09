@@ -222,7 +222,7 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
       .slice(0, 100); // Limit to 100 users for dropdown
 
     // Get recent events (up to 200 for user journey table)
-    const filterUserId = req.query.filterUserId as string | undefined;
+    // Note: filterUserId is already declared above, reuse it
     let filteredEvents = events || [];
     if (filterUserId && filterUserId !== 'all') {
       filteredEvents = filteredEvents.filter(e => e.user_id === filterUserId);
