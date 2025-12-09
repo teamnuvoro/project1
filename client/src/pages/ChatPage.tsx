@@ -138,6 +138,8 @@ export default function ChatPage() {
   // Check if we're coming from payment success
   const [location] = useLocation();
   const isFromPayment = new URLSearchParams(window.location.search).get('paymentSuccess') === 'true';
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [paywallTriggered, setPaywallTriggered] = useState(false);
 
   const { data: userUsage, refetch: refetchUsage } = useQuery<UserUsage>({
     queryKey: ["/api/user/usage"],
