@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, BarChart3, TrendingUp, Users, DollarSign, Lock, Clock, RefreshCw, User, PieChart } from "lucide-react";
+import { Loader2, BarChart3, TrendingUp, Users, DollarSign, Lock, Clock, RefreshCw, User, PieChart, ArrowRight } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -66,7 +66,7 @@ const EVENT_TRANSLATIONS: Record<string, string> = {
 };
 
 // Get event explanation with property details
-function getEventExplanation(eventName: string, eventData?: any): string {
+export function getEventExplanation(eventName: string, eventData?: any): string {
   const baseExplanation = EVENT_TRANSLATIONS[eventName] || `Technical event: ${eventName}`;
   
   // Add property details if available
@@ -90,7 +90,7 @@ function getEventExplanation(eventName: string, eventData?: any): string {
 }
 
 // Get screen color based on event place/name
-function getScreenColor(eventPlace: string, eventName: string): string {
+export function getScreenColor(eventPlace: string, eventName: string): string {
   const place = (eventPlace || '').toLowerCase();
   const name = (eventName || '').toLowerCase();
   
@@ -586,102 +586,59 @@ export default function AdminAnalytics() {
           </Card>
         </div>
 
-        {/* Section 3: The "User Journey" Table (Drill-Down Focus) */}
+        {/* Section 3: The "User Journey" Table - Preview with Link to Full Page */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">
-              User Journey Table
-              {selectedUserId !== 'all' && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  (Filtered for selected user)
-                </span>
-              )}
-            </h2>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span>Auto-refreshing every 5 seconds</span>
-            </div>
+            <h2 className="text-xl font-semibold">User Journey Table</h2>
+            <Button
+              onClick={() => setLocation('/admin/analytics/journey')}
+              className="flex items-center gap-2"
+            >
+              View Full Table
+              <ArrowRight className="w-4 h-4" />
+            </Button>
           </div>
-          <div className="overflow-x-auto border rounded-lg">
-            <div className="max-h-[70vh] overflow-y-auto">
-              <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr className="border-b">
-                  <th className="text-left p-3 font-semibold sticky left-0 bg-muted/50 z-10">Time</th>
-                  <th className="text-left p-3 font-semibold">User ID</th>
-                  <th className="text-left p-3 font-semibold">Event Name</th>
-                  <th className="text-left p-3 font-semibold">Screen</th>
-                  <th className="text-left p-3 font-semibold">Layman's Explanation</th>
-                  <th className="text-left p-3 font-semibold">Details (Properties)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentEvents && data.recentEvents.length > 0 ? (
-                  data.recentEvents.map((event, index) => (
-                    <tr key={`${event.event_time}-${event.user_id}-${index}`} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-3 text-xs font-mono sticky left-0 bg-background z-10">
-                        {new Date(event.event_time).toLocaleString()}
-                      </td>
-                      <td className="p-3 font-mono text-xs text-muted-foreground">
-                        {event.user_id !== 'N/A' ? `${event.user_id.substring(0, 8)}...` : 'N/A'}
-                      </td>
-                      <td className="p-3 font-medium">{event.event_name}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getScreenColor(event.event_place, event.event_name)}`}>
-                          {event.event_place || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-xs max-w-md">
-                        {getEventExplanation(event.event_name, event.event_data)}
-                      </td>
-                      <td className="p-3 text-xs font-mono text-muted-foreground max-w-xs">
-                        {event.event_data && Object.keys(event.event_data).length > 0 ? (
-                          <details className="cursor-pointer">
-                            <summary className="text-blue-600 hover:text-blue-800 font-sans">View properties</summary>
-                            <pre className="mt-1 text-[10px] bg-gray-50 p-2 rounded overflow-auto max-h-40 border">
-                              {JSON.stringify(event.event_data, null, 2)}
-                            </pre>
-                          </details>
-                        ) : (
-                          <span className="text-muted-foreground">No properties</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                      <div className="flex flex-col items-center gap-2">
-                        <p>No events found for the selected time period{selectedUserId !== 'all' ? ' and user' : ''}.</p>
-                        <p className="text-xs">Events will appear here as they are tracked in real-time.</p>
-                        {data.debug && (
-                          <div className="mt-4 p-4 bg-gray-50 rounded text-left text-xs max-w-2xl">
-                            <p className="font-semibold mb-2">Debug Info:</p>
-                            <p>Total events fetched from DB: {data.debug.totalEventsFetched}</p>
-                            <p>Filtered events count: {data.debug.filteredEventsCount}</p>
-                            <p>Recent events mapped: {data.debug.recentEventsCount}</p>
-                            {data.debug.sampleEvent && (
-                              <details className="mt-2">
-                                <summary className="cursor-pointer text-blue-600 hover:text-blue-800">View sample event structure</summary>
-                                <pre className="mt-1 text-[10px] bg-white p-2 rounded overflow-auto border max-h-60">
-                                  {JSON.stringify(data.debug.sampleEvent, null, 2)}
-                                </pre>
-                              </details>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          
+          {/* Preview of recent events */}
+          <div className="space-y-3">
+            {data.recentEvents && data.recentEvents.slice(0, 5).map((event, index) => (
+              <div key={index} className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                <div className="flex-shrink-0 w-32 text-xs font-mono text-muted-foreground">
+                  {new Date(event.event_time).toLocaleString()}
+                </div>
+                <div className="flex-shrink-0 w-24 font-mono text-xs text-muted-foreground">
+                  {event.user_id !== 'N/A' ? `${event.user_id.substring(0, 8)}...` : 'N/A'}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs bg-background px-2 py-1 rounded">{event.event_name}</code>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getScreenColor(event.event_place, event.event_name)}`}>
+                      {event.event_place || 'N/A'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                    {getEventExplanation(event.event_name, event.event_data)}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {(!data.recentEvents || data.recentEvents.length === 0) && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No events found. Events will appear here as they are tracked.</p>
+              </div>
+            )}
+            {data.recentEvents && data.recentEvents.length > 5 && (
+              <div className="text-center pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setLocation('/admin/analytics/journey')}
+                  className="w-full"
+                >
+                  View All {data.recentEvents.length} Events
+                </Button>
+              </div>
+            )}
           </div>
-          {data.recentEvents && data.recentEvents.length > 0 && (
-            <div className="mt-4 text-xs text-muted-foreground text-center">
-              Showing {data.recentEvents.length} most recent events
-            </div>
-          )}
         </Card>
 
         {/* Raw Data Summary */}
