@@ -127,30 +127,47 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
 
     // DAU: Count unique users with daily_active_user event
     const dailyActiveUsers = new Set(
-      events?.filter(e => e.event_name === 'daily_active_user' || e.event_name === 'session_start').map(e => e.user_id) || []
+      events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'daily_active_user' || name === 'session_start';
+      }).map(e => e.user_id) || []
     ).size;
 
     // Retention: returning_user_login events
-    const returningUserLogins = events?.filter(e => e.event_name === 'returning_user_login' || e.event_name === 'login_successful').length || 0;
-    const totalLogins = events?.filter(e => e.event_name === 'login_successful' || e.event_name === 'login_otp_success').length || 0;
+    const returningUserLogins = events?.filter(e => {
+      const name = e.event_name || e.event_type;
+      return name === 'returning_user_login' || name === 'login_successful';
+    }).length || 0;
+    const totalLogins = events?.filter(e => {
+      const name = e.event_name || e.event_type;
+      return name === 'login_successful' || name === 'login_otp_success';
+    }).length || 0;
     const retentionRate = totalLogins > 0 ? (returningUserLogins / totalLogins) * 100 : 0;
 
     // Paywall Efficiency: pay_daily_selected + pay_weekly_selected / paywall_triggered
-    const paywallHits = events?.filter(e => 
-      e.event_name === 'paywall_triggered' || 
-      e.event_name === 'message_limit_hit' ||
-      e.event_name === 'free_message_warning_shown'
-    ).length || 0;
-    const paywallSelections = events?.filter(e => 
-      e.event_name === 'pay_daily_selected' || 
-      e.event_name === 'pay_weekly_selected'
-    ).length || 0;
+    const paywallHits = events?.filter(e => {
+      const name = e.event_name || e.event_type;
+      return name === 'paywall_triggered' || 
+             name === 'message_limit_hit' ||
+             name === 'free_message_warning_shown';
+    }).length || 0;
+    const paywallSelections = events?.filter(e => {
+      const name = e.event_name || e.event_type;
+      return name === 'pay_daily_selected' || 
+             name === 'pay_weekly_selected';
+    }).length || 0;
     const paywallEfficiency = paywallHits > 0 ? (paywallSelections / paywallHits) * 100 : 0;
 
     // Avg Session Time: from session_length_recorded events
-    const sessionLengthEvents = events?.filter(e => e.event_name === 'session_length_recorded') || [];
+    const sessionLengthEvents = events?.filter(e => {
+      const name = e.event_name || e.event_type;
+      return name === 'session_length_recorded';
+    }) || [];
     const sessionLengths = sessionLengthEvents
-      .map(e => e.event_data?.session_length_sec || e.event_data?.sessionLength || 0)
+      .map(e => {
+        const data = e.event_data || e.event_properties || e.metadata || {};
+        return data.session_length_sec || data.sessionLength || 0;
+      })
       .filter(len => len > 0);
     const avgSessionTime = sessionLengths.length > 0
       ? Math.round(sessionLengths.reduce((a, b) => a + b, 0) / sessionLengths.length)
@@ -173,8 +190,9 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
     // Get top 5 event names
     const eventNameCounts: Record<string, number> = {};
     events?.forEach(event => {
-      if (event.event_name) {
-        eventNameCounts[event.event_name] = (eventNameCounts[event.event_name] || 0) + 1;
+      const name = event.event_name || event.event_type;
+      if (name) {
+        eventNameCounts[name] = (eventNameCounts[name] || 0) + 1;
       }
     });
     const top5EventNames = Object.entries(eventNameCounts)
@@ -202,18 +220,39 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
 
     // Conversion Funnel: Step-by-step counts
     const funnelSteps = {
-      signup_started: events?.filter(e => e.event_name === 'signup_started' || e.event_name === 'signup_initiated').length || 0,
-      otp_verified: events?.filter(e => e.event_name === 'otp_verified' || e.event_name === 'login_otp_success').length || 0,
-      persona_selected: events?.filter(e => e.event_name === 'persona_selected' || e.event_name === 'persona_selection').length || 0,
-      chat_opened: events?.filter(e => e.event_name === 'chat_opened' || e.event_name === 'session_start').length || 0,
+      signup_started: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'signup_started' || name === 'signup_initiated';
+      }).length || 0,
+      otp_verified: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'otp_verified' || name === 'login_otp_success';
+      }).length || 0,
+      persona_selected: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'persona_selected' || name === 'persona_selection';
+      }).length || 0,
+      chat_opened: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'chat_opened' || name === 'session_start';
+      }).length || 0,
       message_limit_hit: paywallHits,
     };
 
     // Feature Usage: Count specific interaction events
     const featureUsage = {
-      voice_call_clicked: events?.filter(e => e.event_name === 'cta_voice_call_clicked' || e.event_name === 'voice_call_started').length || 0,
-      summary_clicked: events?.filter(e => e.event_name === 'cta_summary_clicked' || e.event_name === 'summary_viewed').length || 0,
-      persona_alignment_viewed: events?.filter(e => e.event_name === 'persona_alignment_viewed' || e.event_name === 'persona_info_viewed').length || 0,
+      voice_call_clicked: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'cta_voice_call_clicked' || name === 'voice_call_started';
+      }).length || 0,
+      summary_clicked: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'cta_summary_clicked' || name === 'summary_viewed';
+      }).length || 0,
+      persona_alignment_viewed: events?.filter(e => {
+        const name = e.event_name || e.event_type;
+        return name === 'persona_alignment_viewed' || name === 'persona_info_viewed';
+      }).length || 0,
     };
 
     // Get unique user IDs for dropdown
@@ -228,12 +267,14 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
       filteredEvents = filteredEvents.filter(e => e.user_id === filterUserId);
     }
     
+    // Map database columns to expected format
+    // Handle both old format (event_place, event_data) and new format (path, event_properties)
     const recentEvents = filteredEvents.slice(0, 200).map(event => ({
-      event_time: event.event_time,
+      event_time: event.event_time || event.created_at || event.occurred_at || new Date().toISOString(),
       user_id: event.user_id || 'N/A',
-      event_name: event.event_name,
-      event_place: event.event_place || event.event_data?.screen || 'N/A',
-      event_data: event.event_data || {}
+      event_name: event.event_name || event.event_type || 'unknown',
+      event_place: event.event_place || event.path || event.event_data?.screen || event.event_properties?.screen || 'N/A',
+      event_data: event.event_data || event.event_properties || event.metadata || {}
     }));
 
     res.json({

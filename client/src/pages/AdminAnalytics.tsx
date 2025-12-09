@@ -250,6 +250,8 @@ export default function AdminAnalytics() {
     },
     retry: false,
     enabled: !!user?.id && isAuthenticated, // Only fetch if user is logged in AND password authenticated
+    refetchInterval: 5000, // Auto-refresh every 5 seconds for real-time updates
+    refetchIntervalInBackground: true, // Continue polling even when tab is in background
   });
 
   // getEventExplanation is now defined above with property details support
