@@ -162,6 +162,13 @@ interface AnalyticsData {
     subscriptionsCount: number;
     paymentsCount: number;
   };
+  // Debug info (optional)
+  debug?: {
+    totalEventsFetched: number;
+    filteredEventsCount: number;
+    recentEventsCount: number;
+    sampleEvent: any;
+  };
 }
 
 // Admin password - stored as constant
@@ -646,6 +653,22 @@ export default function AdminAnalytics() {
                       <div className="flex flex-col items-center gap-2">
                         <p>No events found for the selected time period{selectedUserId !== 'all' ? ' and user' : ''}.</p>
                         <p className="text-xs">Events will appear here as they are tracked in real-time.</p>
+                        {data.debug && (
+                          <div className="mt-4 p-4 bg-gray-50 rounded text-left text-xs max-w-2xl">
+                            <p className="font-semibold mb-2">Debug Info:</p>
+                            <p>Total events fetched from DB: {data.debug.totalEventsFetched}</p>
+                            <p>Filtered events count: {data.debug.filteredEventsCount}</p>
+                            <p>Recent events mapped: {data.debug.recentEventsCount}</p>
+                            {data.debug.sampleEvent && (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-blue-600 hover:text-blue-800">View sample event structure</summary>
+                                <pre className="mt-1 text-[10px] bg-white p-2 rounded overflow-auto border max-h-60">
+                                  {JSON.stringify(data.debug.sampleEvent, null, 2)}
+                                </pre>
+                              </details>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>

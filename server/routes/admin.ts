@@ -76,8 +76,8 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
     let eventsQuery = supabase
       .from('user_events')
       .select('*')
-      .gte('event_time', startDateISO)
-      .order('event_time', { ascending: false });
+      .gte('created_at', startDateISO) // Use created_at instead of event_time
+      .order('created_at', { ascending: false });
 
     // Filter by user if specified (for drill-down view)
     if (filterUserId && filterUserId !== 'all') {
@@ -88,6 +88,8 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
 
     if (eventsError) {
       console.error('[Admin Analytics] Error fetching events:', eventsError);
+    } else {
+      console.log(`[Admin Analytics] Fetched ${events?.length || 0} events from database`);
     }
 
     // Fetch sessions
@@ -272,13 +274,21 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
     
     // Map database columns to expected format
     // Handle both old format (event_place, event_data) and new format (path, event_properties)
-    const recentEvents = filteredEvents.slice(0, 200).map(event => ({
-      event_time: event.event_time || event.created_at || event.occurred_at || new Date().toISOString(),
-      user_id: event.user_id || 'N/A',
-      event_name: event.event_name || event.event_type || 'unknown',
-      event_place: event.event_place || event.path || event.event_data?.screen || event.event_properties?.screen || 'N/A',
-      event_data: event.event_data || event.event_properties || event.metadata || {}
-    }));
+    const recentEvents = filteredEvents.slice(0, 200).map(event => {
+      // Log first event for debugging
+      if (filteredEvents.indexOf(event) === 0) {
+        console.log('[Admin Analytics] Sample event structure:', JSON.stringify(event, null, 2));
+      }
+      return {
+        event_time: event.event_time || event.created_at || event.occurred_at || new Date().toISOString(),
+        user_id: event.user_id || 'N/A',
+        event_name: event.event_name || event.event_type || 'unknown',
+        event_place: event.event_place || event.path || event.event_data?.screen || event.event_properties?.screen || 'N/A',
+        event_data: event.event_data || event.event_properties || event.metadata || {}
+      };
+    });
+    
+    console.log(`[Admin Analytics] Mapped ${recentEvents.length} events for display`);
 
     res.json({
       metrics: {
@@ -320,6 +330,14 @@ router.get('/api/admin/analytics', requireAuth, async (req: Request, res: Respon
         sessionsCount: sessions?.length || 0,
         subscriptionsCount: subscriptions?.length || 0,
         paymentsCount: payments?.length || 0
+      },
+      
+      // Debug info
+      debug: {
+        totalEventsFetched: events?.length || 0,
+        filteredEventsCount: filteredEvents.length,
+        recentEventsCount: recentEvents.length,
+        sampleEvent: events?.[0] || null
       }
     });
   } catch (error: any) {
