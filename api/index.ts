@@ -11,6 +11,7 @@ import paymentRoutes from "../server/routes/payment";
 import transcribeRoutes from "../server/routes/deepgram-transcribe";
 import messagesHistoryRoutes from "../server/routes/messages-history";
 import analyticsEventsRoutes from "../server/routes/analytics-events";
+import adminRoutes from "../server/routes/admin";
 
 const app = express();
 
@@ -125,6 +126,7 @@ app.use(paymentRoutes);
 app.use(transcribeRoutes);
 app.use(messagesHistoryRoutes);
 app.use(analyticsEventsRoutes);
+app.use(adminRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

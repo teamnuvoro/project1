@@ -19,6 +19,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import MemoriesPage from "@/pages/MemoriesPage";
 import GalleryPage from "@/pages/GalleryPage";
 import LandingPage from "@/pages/LandingPage";
+import AdminAnalytics from "@/pages/AdminAnalytics";
 
 import SignupPage from "@/pages/SignupPageSimple";
 import LoginPage from "@/pages/LoginPageSimple";
@@ -126,6 +127,9 @@ function Router() {
       </Route>
       <Route path="/history/:id">
         {() => <ProtectedLayout><HistoryDetailPage /></ProtectedLayout>}
+      </Route>
+      <Route path="/admin/analytics">
+        {() => <ProtectedLayout><AdminAnalytics /></ProtectedLayout>}
       </Route>
 
       <Route component={NotFound} />
