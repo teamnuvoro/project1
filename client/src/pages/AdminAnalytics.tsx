@@ -67,9 +67,16 @@ export default function AdminAnalytics() {
   }, [user, setLocation]);
 
   const { data, isLoading, error, refetch } = useQuery<AnalyticsData>({
-    queryKey: ['/api/admin/analytics', days],
+    queryKey: ['/api/admin/analytics', days, user?.id],
     queryFn: async () => {
-      const response = await fetch(`/api/admin/analytics?days=${days}`);
+      if (!user?.id) {
+        throw new Error('User not authenticated');
+      }
+      const response = await fetch(`/api/admin/analytics?days=${days}&userId=${user.id}`, {
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
       if (!response.ok) {
         if (response.status === 403) {
           throw new Error('Access denied. Admin privileges required.');
@@ -79,6 +86,7 @@ export default function AdminAnalytics() {
       return response.json();
     },
     retry: false,
+    enabled: !!user?.id, // Only fetch if user is logged in
   });
 
   const getEventExplanation = (eventName: string): string => {
