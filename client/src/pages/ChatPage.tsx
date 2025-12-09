@@ -511,10 +511,17 @@ export default function ChatPage() {
           <Skeleton className="h-16 w-3/4 rounded-2xl" />
           <Skeleton className="h-12 w-2/3 rounded-2xl ml-auto" />
           <Skeleton className="h-16 w-3/4 rounded-2xl" />
-        </div>
       </div>
-    );
-  }
+
+      {/* Feedback Modal - Smart trigger after paywall */}
+      <FeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        triggerContext={paywallTriggered ? 'paywall' : 'manual'}
+      />
+    </div>
+  );
+}
 
   return (
     <div className="flex flex-col h-full w-full max-w-full bg-white overflow-hidden relative">

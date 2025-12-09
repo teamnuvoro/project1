@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, BarChart3, TrendingUp, Users, DollarSign, Lock, Clock, RefreshCw, User, PieChart, ArrowRight } from "lucide-react";
+import { Loader2, BarChart3, TrendingUp, Users, DollarSign, Lock, Clock, RefreshCw, User, PieChart, ArrowRight, Star, MessageSquare, Filter } from "lucide-react";
 import {
   Select,
   SelectContent,

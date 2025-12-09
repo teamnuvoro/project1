@@ -12,6 +12,7 @@ import transcribeRoutes from "../server/routes/deepgram-transcribe";
 import messagesHistoryRoutes from "../server/routes/messages-history";
 import analyticsEventsRoutes from "../server/routes/analytics-events";
 import adminRoutes from "../server/routes/admin";
+import feedbackRoutes from "../server/routes/feedback";
 
 const app = express();
 
