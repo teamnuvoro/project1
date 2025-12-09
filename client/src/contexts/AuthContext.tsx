@@ -14,6 +14,7 @@ interface User {
   gender?: string;
   persona?: string;
   premium_user?: boolean;
+  is_admin?: boolean;
   onboarding_complete?: boolean;
   age?: number;
   city?: string;

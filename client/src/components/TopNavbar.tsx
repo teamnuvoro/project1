@@ -8,6 +8,7 @@ import {
   LogOut,
   Crown,
   Image as ImageIcon,
+  BarChart3,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
