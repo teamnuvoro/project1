@@ -95,7 +95,20 @@ export function TopNavbar() {
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-white font-semibold text-base leading-tight truncate">
-                  Riya
+                  {(() => {
+                    // Static persona name display - no dropdown functionality
+                    const PERSONA_NAMES: Record<string, string> = {
+                      'sweet_supportive': 'Riya',
+                      'flirtatious': 'Meera',
+                      'playful': 'Sana',
+                      'dominant': 'Aisha',
+                      'playful_flirty': 'Meera',
+                      'bold_confident': 'Aisha',
+                      'calm_mature': 'Riya',
+                    };
+                    const personaName = user?.persona ? PERSONA_NAMES[user.persona] || 'Riya' : 'Riya';
+                    return personaName;
+                  })()}
                 </span>
                 {isChatPage && (
                   isPremium ? (
