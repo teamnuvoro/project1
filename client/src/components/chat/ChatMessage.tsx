@@ -65,7 +65,15 @@ export function ChatMessage({ message }: ChatMessageProps) {
     >
       <motion.div 
         whileHover={{ scale: 1.01 }}
-        className={`max-w-[85%] ${isAI ? 'chat-bubble-ai' : 'chat-bubble-user'}`}
+        className={`max-w-[85%] px-3 py-2.5 ${
+          isAI 
+            ? 'rounded-2xl rounded-tl-sm' 
+            : 'rounded-2xl rounded-tr-sm'
+        }`}
+        style={{
+          backgroundColor: isAI ? '#E5E5E5' : '#FF69B4',
+          color: isAI ? '#333333' : '#FFFFFF'
+        }}
       >
         {/* Image display (only for AI messages with imageUrl) */}
         {isAI && message.imageUrl && !imageError && (
@@ -90,20 +98,20 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
         
         <p 
-          className="text-base leading-relaxed whitespace-pre-wrap break-words" 
+          className="text-base leading-relaxed whitespace-pre-wrap break-words mb-1" 
           data-testid={`text-message-content-${message.id}`}
+          style={{
+            color: isAI ? '#333333' : '#FFFFFF'
+          }}
         >
           {content || "..."}
         </p>
-        <motion.p 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className={`text-xs mt-2 ${isAI ? "text-gray-500" : "text-white/70"}`}
+        <p 
+          className={`text-xs ${isAI ? "text-gray-600" : "text-white/80"}`}
           data-testid={`text-timestamp-${message.id}`}
         >
           {message.createdAt ? format(new Date(message.createdAt), 'H:mm') : ''}
-        </motion.p>
+        </p>
       </motion.div>
     </motion.div>
   );

@@ -45,10 +45,18 @@ export function ChatMessages({ messages, isLoading, isMobile, isTyping }: ChatMe
     <div 
       ref={containerRef}
       onScroll={handleScroll}
-      className="h-full w-full overflow-y-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 bg-gradient-to-b from-purple-50/30 via-pink-50/20 to-white"
+      className="h-full w-full overflow-y-auto px-4 py-3 bg-white relative"
       style={{
         scrollbarWidth: 'thin',
-        scrollbarColor: 'rgba(139, 92, 246, 0.3) transparent'
+        scrollbarColor: 'rgba(255, 105, 180, 0.3) transparent',
+        backgroundColor: '#FFFFFF',
+        backgroundImage: `
+          radial-gradient(circle at 2px 2px, rgba(255, 105, 180, 0.08) 1px, transparent 0),
+          radial-gradient(circle at 25px 25px, rgba(255, 105, 180, 0.06) 1px, transparent 0),
+          radial-gradient(circle at 50px 50px, rgba(255, 182, 193, 0.05) 1px, transparent 0)
+        `,
+        backgroundSize: '50px 50px, 75px 75px, 100px 100px',
+        backgroundPosition: '0 0, 12px 12px, 25px 25px'
       }}
     >
       <div className="max-w-2xl mx-auto w-full space-y-3 sm:space-y-4">

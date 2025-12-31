@@ -9,6 +9,7 @@ import {
   Crown,
   BarChart3,
   MessageCircle,
+  Heart,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -61,98 +62,69 @@ export function TopNavbar() {
     window.dispatchEvent(paywallEvent);
   };
 
+  // Calculate remaining messages/credits
+  const remainingCredits = isPremium ? 'Unlimited' : userUsage?.messageCount !== undefined 
+    ? Math.max(0, 1000 - (userUsage.messageCount || 0))
+    : 200;
+
   return (
     <nav
-      className="fixed top-0 left-0 right-0 h-[60px] z-50 shadow-md"
+      className="fixed top-0 left-0 right-0 h-[60px] z-50"
       style={{
-        background: 'linear-gradient(135deg, #8B4FB8 0%, #E94B9F 100%)',
+        background: '#FF69B4', // Solid pink background
       }}
     >
-      <div className="h-full max-w-7xl mx-auto px-4 flex items-center justify-between">
+      <div className="h-full w-full px-4 flex items-center justify-between">
         {/* Left: Profile Section */}
-        <Link href="/chat">
-          <div className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition-opacity">
-            {/* Profile Picture */}
+        <div className="flex items-center gap-3">
+          {/* Profile Circle with Riya text inside */}
+          <div className="relative flex-shrink-0">
             <div
-              className="w-11 h-11 rounded-full border-2 border-white flex items-center justify-center overflow-hidden flex-shrink-0"
+              className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center"
               style={{
-                background: 'linear-gradient(135deg, #8B4FB8 0%, #E94B9F 100%)',
+                background: '#FF69B4',
               }}
             >
-              <img
-                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face"
-                alt="Riya"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  // Fallback to initials if image fails
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.parentElement!.innerHTML = '<span class="text-white font-bold text-lg">RI</span>';
-                }}
-              />
+              <span className="text-white font-bold text-sm">Riya</span>
             </div>
-
-            {/* Name and Status */}
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-white font-semibold text-base leading-tight truncate">
-                  {(() => {
-                    // Static persona name display - no dropdown functionality
-                    const PERSONA_NAMES: Record<string, string> = {
-                      'sweet_supportive': 'Riya',
-                      'flirtatious': 'Meera',
-                      'playful': 'Sana',
-                      'dominant': 'Aisha',
-                      'playful_flirty': 'Meera',
-                      'bold_confident': 'Aisha',
-                      'calm_mature': 'Riya',
-                    };
-                    const personaName = user?.persona ? PERSONA_NAMES[user.persona] || 'Riya' : 'Riya';
-                    return personaName;
-                  })()}
-                </span>
-                {isChatPage && (
-                  isPremium ? (
-                    <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold tracking-wide shadow-sm flex-shrink-0">
-                      {userUsage?.subscriptionPlan
-                        ? `PREMIUM (${userUsage.subscriptionPlan.toUpperCase()})`
-                        : 'PREMIUM'}
-                    </span>
-                  ) : (
-                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full font-bold tracking-wide border border-white/30 flex-shrink-0">
-                      FREE PLAN
-                    </span>
-                  )
-                )}
-              </div>
-              <span className="text-white text-xs opacity-80 flex items-center gap-1">
-                <span className="text-green-400 text-[10px]">●</span>
-                Online
-              </span>
-            </div>
+            {/* Green dot for active status - positioned bottom-right */}
+            <div 
+              className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"
+              style={{ borderColor: '#FF69B4' }}
+            ></div>
           </div>
-        </Link>
 
-        {/* Right: Action Icons */}
-        <div className="flex items-center gap-1 sm:gap-2">
-          {/* Upgrade to Premium Button (only on chat page for non-premium users) */}
-          {isChatPage && !isPremium && (
-            <button
-              onClick={handleUpgradeClick}
-              className="px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 rounded-full transition-all duration-300 flex items-center gap-1.5 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
-              title="Upgrade to Premium"
-            >
-              <Crown className="w-4 h-4 text-yellow-900" />
-              <span className="text-xs font-bold text-yellow-900 hidden sm:inline">Premium</span>
-            </button>
+          {/* Name and Status */}
+          <div className="flex flex-col">
+            <span className="text-white font-semibold text-base leading-tight">
+              Riya
+            </span>
+            <span className="text-white text-xs flex items-center gap-1 leading-tight">
+              <span className="text-green-400 text-[10px]">●</span>
+              Active now
+            </span>
+          </div>
+        </div>
+
+        {/* Right: Credits and Actions */}
+        <div className="flex items-center gap-3">
+          {/* ₹200 Left with heart icon */}
+          {isChatPage && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-white font-semibold text-sm">
+                ₹{typeof remainingCredits === 'number' ? remainingCredits : '200'} Left
+              </span>
+              <Heart className="w-4 h-4 text-white fill-white" />
+            </div>
           )}
 
-          {/* Voice Call Button (Visible) */}
+          {/* Voice Call Button */}
           <Link href="/call">
             <button
-              className="p-2 rounded-full text-white hover:bg-white/20 transition-colors"
+              className="p-2 rounded-full text-white hover:bg-white/20 transition-colors flex-shrink-0"
               title="Voice Call"
             >
-              <Phone className="w-5 h-5 sm:w-6 sm:h-6" />
+              <Phone className="w-5 h-5" />
             </button>
           </Link>
 

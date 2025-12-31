@@ -13,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { analytics } from "@/lib/analytics";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { FeedbackModal } from "@/components/FeedbackModal";
 import {
   trackChatOpened,
@@ -853,15 +853,15 @@ export default function ChatPage() {
 }
 
   return (
-    <div className="flex flex-col h-full w-full max-w-full bg-white overflow-hidden relative">
+    <div className="flex flex-col h-screen w-full bg-white overflow-hidden relative">
       {/* Exit Intent Modal */}
       <ExitIntentModal
         isOpen={showExitModal}
         onClose={closeExitModal}
       />
 
-      {/* Scrollable Messages Area - Takes full height minus input */}
-      <div className="flex-1 min-h-0 w-full overflow-hidden">
+      {/* Scrollable Messages Area - Takes full height minus navbar and input */}
+      <div className="flex-1 min-h-0 w-full overflow-hidden pt-[60px]">
         <ChatMessages
           messages={displayMessages as Message[]}
           isLoading={isMessagesLoading}
@@ -870,17 +870,29 @@ export default function ChatPage() {
         />
       </div>
 
-      {/* Fixed Input at Bottom - Responsive */}
-      <div className="flex-shrink-0 w-full z-20 bg-white pb-[env(safe-area-inset-bottom)]">
+      {/* Fixed Input at Bottom */}
+      <div className="flex-shrink-0 w-full z-20 bg-white border-t border-gray-100">
         <ChatInput
           onSendMessage={handleSendMessage}
           isLoading={sendMessageMutation.isPending || isTyping}
           disabled={isLimitReached}
           isMobile={isMobile}
-          quickReplies={messages.length <= 3 ? quickReplies : []}
+          quickReplies={[]}
           failedMessage={failedMessage}
         />
       </div>
+
+      {/* Floating Call Button - Right side, above input bar */}
+      <Link href="/call">
+        <button
+          className="fixed right-4 bottom-28 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-300 z-30"
+          style={{ backgroundColor: '#FF69B4' }}
+          title="Call Riya"
+          data-testid="button-floating-call"
+        >
+          <Phone className="w-6 h-6 text-white" />
+        </button>
+      </Link>
 
       <PaywallSheet open={paywallOpen} onOpenChange={setPaywallOpen} />
 

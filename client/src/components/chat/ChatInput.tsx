@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Send, Loader2, Mic, MicOff } from "lucide-react";
+import { Send, Loader2, Mic, MicOff, Paperclip, Phone, Heart } from "lucide-react";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useToast } from "@/hooks/use-toast";
 import { VoiceRecordingModal } from "@/components/VoiceRecordingModal";
+import { Link } from "wouter";
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
@@ -126,56 +127,31 @@ export function ChatInput({
         onStartRecording={startRecording}
       />
 
-      <div className="bg-white border-t border-gray-100 px-3 sm:px-4 py-2.5 sm:py-3 space-y-2 sm:space-y-3 shadow-lg w-full">
-        {/* Quick Replies - Responsive */}
-        {quickReplies && quickReplies.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 sm:gap-2 animate-fade-in">
-            {quickReplies.slice(0, 6).map((reply, index) => (
-              <button
-                key={index}
-                onClick={() => handleQuickReply(reply)}
-                disabled={isLoading || disabled}
-                className="quick-reply-chip text-xs sm:text-sm disabled:opacity-50 px-2 sm:px-3 py-1.5 sm:py-2"
-                data-testid={`button-quickreply-${index}`}
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <span className="line-clamp-1">{reply}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Input Row - Responsive Flexbox */}
-        <div className="flex items-center gap-2 sm:gap-3 w-full">
+      <div className="bg-white border-t border-gray-100 px-4 py-3 w-full">
+        {/* Input Row - Paperclip, Input, Send Button */}
+        <div className="flex items-center gap-2 w-full">
+          {/* Paperclip icon on left */}
           <button
-            onClick={handleMicClick}
-            disabled={isLoading || disabled}
-            className={`p-2.5 sm:p-3 rounded-full transition-all duration-300 flex-shrink-0 ${isRecording
-              ? "bg-gradient-to-r from-red-500 to-pink-500 text-white animate-pulse shadow-lg shadow-red-300/50"
-              : "bg-gradient-to-r from-gray-100 to-gray-50 text-gray-500 hover:from-gray-200 hover:to-gray-100 hover:shadow-md"
-              }`}
-            title={isRecording ? "Stop recording" : "Start recording"}
-            data-testid="button-voice-record"
+            className="p-2 text-gray-500 hover:text-gray-700 transition-colors flex-shrink-0"
+            title="Attach file"
+            data-testid="button-attach"
           >
-            {isRecording ? (
-              <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />
-            ) : (
-              <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
-            )}
+            <Paperclip className="w-5 h-5" />
           </button>
 
+          {/* Input field */}
           <div className="flex-1 min-w-0 relative">
             <input
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && handleSend()}
-              placeholder={disabled ? "Limit Reached - Upgrade to Chat" : (isLoading ? "Sending..." : "Type your message...")}
+              placeholder={disabled ? "Limit Reached - Upgrade to Chat" : (isLoading ? "Sending..." : "Message Riya...")}
               disabled={isLoading || disabled}
-              className={`w-full h-10 sm:h-12 px-3 sm:px-4 rounded-full text-sm sm:text-base focus:outline-none transition-all duration-300 shadow-sm
+              className={`w-full h-12 px-4 rounded-full text-sm focus:outline-none transition-all duration-300
                 ${disabled
                   ? "bg-red-50 text-red-500 placeholder:text-red-400 font-semibold cursor-not-allowed border-2 border-red-100"
-                  : "bg-gradient-to-r from-gray-50 to-gray-100 text-foreground placeholder:text-gray-400 focus:ring-2 focus:ring-purple-400 focus:from-purple-50 focus:to-pink-50 disabled:opacity-50 focus:shadow-md"
+                  : "bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-pink-400 focus:border-pink-400 disabled:opacity-50"
                 }`}
               data-testid="input-chat-message"
             />
@@ -193,18 +169,30 @@ export function ChatInput({
             )}
           </div>
 
+          {/* Pink send button */}
           <button
             onClick={handleSend}
             disabled={isLoading || disabled || !message.trim()}
-            className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-purple-500 via-pink-500 to-purple-600 text-white rounded-full flex items-center justify-center disabled:opacity-50 shadow-lg shadow-purple-300/40 hover:shadow-xl hover:shadow-purple-400/50 hover:scale-105 active:scale-95 transition-all duration-300 disabled:hover:scale-100 disabled:hover:shadow-lg flex-shrink-0"
+            className="w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-300 disabled:hover:scale-100 flex-shrink-0"
+            style={{ backgroundColor: '#FF69B4' }}
             data-testid="button-send-message"
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin text-white" />
             ) : (
-              <Send className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Send className="h-5 w-5 text-white" />
             )}
           </button>
+        </div>
+
+        {/* Call Riya text with heart icon below - Centered */}
+        <div className="flex items-center justify-center gap-1.5 mt-2">
+          <Link href="/call">
+            <button className="flex items-center gap-1.5 transition-colors text-sm hover:opacity-80">
+              <span style={{ color: '#FF69B4' }}>Call Riya</span>
+              <Heart className="w-4 h-4" style={{ color: '#FF69B4', fill: '#FF69B4' }} />
+            </button>
+          </Link>
         </div>
       </div>
     </>
