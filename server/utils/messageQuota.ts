@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
-const FREE_MESSAGE_LIMIT = 20;
+const FREE_MESSAGE_LIMIT = 1000;
 
 export interface MessageQuotaCheck {
   allowed: boolean;
@@ -43,8 +43,16 @@ export async function checkMessageQuota(
                      user.subscription_tier === 'daily' || 
                      user.subscription_tier === 'weekly';
 
+    console.log(`[Message Quota] User ${userId} premium check:`, {
+      premium_user: user.premium_user,
+      subscription_tier: user.subscription_tier,
+      subscription_end_time: user.subscription_end_time,
+      isPremium: isPremium
+    });
+
     if (isPremium) {
       // Premium user - unlimited messages
+      console.log(`[Message Quota] ✅ Premium user ${userId} - allowing unlimited messages`);
       return {
         allowed: true,
         subscriptionTier: user.subscription_tier || (user.premium_user ? 'daily' : 'free'),
@@ -135,7 +143,7 @@ export async function checkMessageQuota(
 
       const msgCount = count || 0;
 
-      // Allow if count is less than limit (0-19 can send, 20+ blocked)
+      // Allow if count is less than limit (0-999 can send, 1000+ blocked)
       if (msgCount >= FREE_MESSAGE_LIMIT) {
         return {
           allowed: false,
@@ -156,8 +164,8 @@ export async function checkMessageQuota(
 
     const msgCount = messageCount || 0;
 
-    // Allow if count is less than limit (0-19 can send, 20+ blocked)
-    // This ensures new users (count = 0) can send their first 20 messages
+    // Allow if count is less than limit (0-999 can send, 1000+ blocked)
+    // This ensures new users (count = 0) can send their first 1000 messages
     if (msgCount >= FREE_MESSAGE_LIMIT) {
       return {
         allowed: false,

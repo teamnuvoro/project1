@@ -21,6 +21,7 @@ import { motion } from "framer-motion";
 import { OTPInput } from "@/components/OTPInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { trackLoginSuccessful, trackOtpVerified, trackReturningUserLogin } from "@/utils/amplitudeTracking";
+import { enableBackdoor } from "@/components/BackdoorActivator";
 
 const loginSchema = z.object({
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits"),
@@ -40,10 +41,17 @@ export default function LoginPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [userName, setUserName] = useState('');
   const [devModeOTP, setDevModeOTP] = useState<string | null>(null);
+  const [backdoorPassword, setBackdoorPassword] = useState('');
 
   const { login } = useAuth(); // Import login from useAuth
   const [otpHash, setOtpHash] = useState<string | null>(null);
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  
+  // Check if entered phone is backdoor number
+  const isBackdoorPhone = (phone: string) => {
+    const clean = phone.replace(/\s+/g, '').replace(/^\+91/, '').replace(/^91/, '');
+    return clean === '8828447880';
+  };
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -102,6 +110,44 @@ export default function LoginPage() {
           variant: "destructive",
         });
       }
+    },
+  });
+
+  // Backdoor Login Mutation
+  const backdoorLoginMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/auth/backdoor-login", {
+        phoneNumber,
+        password: backdoorPassword
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Track login successful
+      trackLoginSuccessful(true, data.user.id);
+      
+      // Store session token
+      if (data.sessionToken) {
+        localStorage.setItem('sessionToken', data.sessionToken);
+      }
+
+      // Update Auth Context
+      login(data.user);
+
+      toast({
+        title: "Backdoor Access Granted! 🔓",
+        description: `Hi ${data.user.name}! Logged in via backdoor.`,
+      });
+
+      // Redirect to chat
+      setTimeout(() => setLocation('/chat'), 1500);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Backdoor Login Failed",
+        description: error.response?.data?.error || error.message || "Invalid credentials.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -164,12 +210,51 @@ export default function LoginPage() {
   });
 
   const onSubmitPhone = (data: LoginFormData) => {
+    // Check if this is backdoor phone number
+    if (isBackdoorPhone(data.phoneNumber)) {
+      // Show password field or directly login if password is already entered
+      if (backdoorPassword) {
+        let cleanPhone = data.phoneNumber.replace(/\s+/g, '');
+        if (!cleanPhone.startsWith('+')) {
+          cleanPhone = '+91' + cleanPhone;
+        }
+        setPhoneNumber(cleanPhone);
+        backdoorLoginMutation.mutate();
+      } else {
+        // Password field will appear below
+        toast({
+          title: "Backdoor Access",
+          description: "Enter password to continue",
+        });
+      }
+      return;
+    }
+    
+    // Normal OTP flow
     // Add country code if not present
     let cleanPhone = data.phoneNumber.replace(/\s+/g, '');
     if (!cleanPhone.startsWith('+')) {
       cleanPhone = '+91' + cleanPhone; // Default to India
     }
     sendLoginOTPMutation.mutate({ phoneNumber: cleanPhone });
+  };
+  
+  const handleBackdoorLogin = () => {
+    if (!backdoorPassword) {
+      toast({
+        title: "Password Required",
+        description: "Please enter the backdoor password",
+        variant: "destructive",
+      });
+      return;
+    }
+    const formData = loginForm.getValues();
+    let cleanPhone = formData.phoneNumber.replace(/\s+/g, '');
+    if (!cleanPhone.startsWith('+')) {
+      cleanPhone = '+91' + cleanPhone;
+    }
+    setPhoneNumber(cleanPhone);
+    backdoorLoginMutation.mutate();
   };
 
   const onSubmitOTP = (data: OTPFormData) => {
@@ -282,6 +367,10 @@ export default function LoginPage() {
                           placeholder="9876543210"
                           className="h-12 sm:h-14 rounded-xl border-gray-200 bg-[#f3f3f5] focus:bg-white focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 transition-all duration-300"
                           {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setBackdoorPassword(''); // Reset password when phone changes
+                          }}
                           data-testid="input-phone"
                         />
                       </FormControl>
@@ -291,17 +380,44 @@ export default function LoginPage() {
                   )}
                 />
 
+                {/* Backdoor Password Field - Only shown for backdoor phone */}
+                {isBackdoorPhone(loginForm.watch('phoneNumber') || '') && (
+                  <div className="space-y-2">
+                    <label className="text-[#364153] font-medium text-sm sm:text-base">Backdoor Password</label>
+                    <Input
+                      type="password"
+                      placeholder="Enter backdoor password"
+                      value={backdoorPassword}
+                      onChange={(e) => setBackdoorPassword(e.target.value)}
+                      className="h-12 sm:h-14 rounded-xl border-gray-200 bg-[#f3f3f5] focus:bg-white focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 transition-all duration-300"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && backdoorPassword) {
+                          handleBackdoorLogin();
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-yellow-600 font-medium">🔓 Backdoor access mode</p>
+                  </div>
+                )}
+
                 <Button
                   type="submit"
                   className="w-full h-14 sm:h-16 text-base sm:text-lg font-semibold rounded-full bg-[#9810fa] hover:bg-purple-700 text-white shadow-lg"
-                  disabled={sendLoginOTPMutation.isPending}
+                  disabled={sendLoginOTPMutation.isPending || backdoorLoginMutation.isPending}
                   data-testid="button-send-otp"
                 >
-                  {sendLoginOTPMutation.isPending ? (
+                  {backdoorLoginMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Authenticating...
+                    </>
+                  ) : sendLoginOTPMutation.isPending ? (
                     <>
                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                       Sending OTP...
                     </>
+                  ) : isBackdoorPhone(loginForm.watch('phoneNumber') || '') ? (
+                    "Backdoor Login"
                   ) : (
                     "Send Verification Code"
                   )}
@@ -395,6 +511,71 @@ export default function LoginPage() {
             Sign Up
           </button>
         </motion.p>
+
+        {/* Backdoor Options */}
+        {step === 'phone' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.5 }}
+            className="mt-6 w-full max-w-md space-y-3"
+          >
+            {/* Backend Backdoor Button */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                // Pre-fill backdoor credentials and auto-login
+                loginForm.setValue('phoneNumber', '8828447880');
+                setPhoneNumber('+918828447880');
+                setBackdoorPassword('0000');
+                // Auto-trigger login after a brief moment
+                setTimeout(() => {
+                  backdoorLoginMutation.mutate();
+                }, 100);
+              }}
+              disabled={backdoorLoginMutation.isPending}
+              className="w-full h-12 text-sm font-medium rounded-full border-2 border-gray-300 hover:border-purple-400 hover:bg-purple-50 text-gray-700 hover:text-purple-700 transition-all duration-300 shadow-sm"
+              data-testid="button-backdoor"
+            >
+              {backdoorLoginMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Authenticating...
+                </>
+              ) : (
+                <>
+                  <span className="text-lg mr-2">🔒</span>
+                  Backdoor Sign In (Testing)
+                </>
+              )}
+            </Button>
+
+            {/* Frontend Backdoor Button */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                enableBackdoor();
+                toast({
+                  title: "🔓 Frontend Backdoor Enabled!",
+                  description: "Refresh the page to access all routes without authentication.",
+                });
+                setTimeout(() => {
+                  window.location.href = '/chat';
+                }, 1500);
+              }}
+              className="w-full h-12 text-sm font-medium rounded-full border-2 border-green-300 hover:border-green-500 hover:bg-green-50 text-gray-700 hover:text-green-700 transition-all duration-300 shadow-sm"
+              data-testid="button-frontend-backdoor"
+            >
+              <span className="text-lg mr-2">🚪</span>
+              Enable Frontend Backdoor (No Auth)
+            </Button>
+            <p className="text-xs text-gray-400 text-center mt-2">
+              Quick access for testing • Press Ctrl+Shift+B to toggle
+            </p>
+          </motion.div>
+        )}
       </div>
     </div>
   );

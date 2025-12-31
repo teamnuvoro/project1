@@ -2,8 +2,8 @@
 // Replace these values with your actual API credentials when ready for production
 
 export const CallingConfig = {
-  // Choose your provider: 'daily' | 'agora' | 'twilio' | '100ms' | 'demo' | 'vapi'
-  provider: 'vapi', // Using Vapi for AI voice calls
+  // Choose your provider: 'daily' | 'agora' | 'twilio' | '100ms' | 'demo' | 'vapi' | 'bolna'
+  provider: 'bolna', // Using Bolna for AI voice calls
   
   // Daily.co Configuration
   daily: {
@@ -29,6 +29,14 @@ export const CallingConfig = {
   hms: {
     appId: import.meta.env.VITE_HMS_APP_ID || 'YOUR_100MS_APP_ID',
     appSecret: import.meta.env.HMS_APP_SECRET || 'YOUR_100MS_APP_SECRET'
+  },
+  
+  // Bolna Configuration
+  bolna: {
+    apiKey: import.meta.env.VITE_BOLNA_API_KEY,
+    apiUrl: import.meta.env.VITE_BOLNA_API_URL || 'https://api.bolna.ai/v1',
+    agentId: import.meta.env.VITE_BOLNA_AGENT_ID,
+    webSocketUrl: import.meta.env.VITE_BOLNA_WS_URL || 'wss://api.bolna.ai/ws'
   },
   
   // Call Settings
@@ -58,6 +66,8 @@ export const getApiConfig = () => {
       return CallingConfig.hms;
     case 'vapi':
       return { provider: 'vapi' };
+    case 'bolna':
+      return CallingConfig.bolna;
     default:
       return null;
   }

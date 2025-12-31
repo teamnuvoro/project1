@@ -24,8 +24,11 @@ export default function CallPage() {
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [statusText, setStatusText] = useState('Tap to call Riya');
   const [isVapiReady, setIsVapiReady] = useState(false);
+  const [isBolnaReady, setIsBolnaReady] = useState(false);
   const [callTranscript, setCallTranscript] = useState('');
   const vapiRef = useRef<Vapi | null>(null);
+  const bolnaWsRef = useRef<WebSocket | null>(null);
+  const bolnaCallIdRef = useRef<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const callSessionIdRef = useRef<string | null>(null);
   const sessionDurationRef = useRef<number>(0);
@@ -37,7 +40,10 @@ export default function CallPage() {
 
   const { data: callConfig, isLoading: configLoading } = useQuery<{
     ready: boolean;
+    provider?: 'bolna' | 'vapi' | 'sarvam';
     publicKey?: string;
+    agentId?: string;
+    apiUrl?: string;
     error?: string;
   }>({
     queryKey: ["/api/call/config"],
@@ -65,14 +71,14 @@ export default function CallPage() {
   });
 
   const startCallMutation = useMutation({
-    mutationFn: async (data?: { vapiCallId?: string }) => {
+    mutationFn: async (data?: { bolnaCallId?: string; vapiCallId?: string; provider?: string }) => {
       const response = await apiRequest("POST", "/api/call/start", data || {});
       return response.json();
     },
   });
 
   const endCallMutation = useMutation({
-    mutationFn: async (data: { sessionId?: string; durationSeconds: number; endReason: string; transcript?: string }) => {
+    mutationFn: async (data: { sessionId?: string; bolnaCallId?: string; vapiCallId?: string; durationSeconds: number; endReason: string; transcript?: string }) => {
       const response = await apiRequest("POST", "/api/call/end", data);
       return response.json();
     },
@@ -84,8 +90,38 @@ export default function CallPage() {
   const totalUsedSeconds = userUsage?.callDuration || 0;
   const remainingFreeSeconds = Math.max(0, FREE_CALL_LIMIT_SECONDS - totalUsedSeconds);
 
+  // Initialize Bolna WebSocket connection
+  useEffect(() => {
+    const initBolna = async () => {
+      if (callConfig?.provider !== 'bolna' || !callConfig?.ready) {
+        setIsBolnaReady(false);
+        return;
+      }
+
+      try {
+        // Bolna will be initialized when call starts via API
+        setIsBolnaReady(true);
+        console.log('[CallPage] Bolna ready for calls');
+      } catch (error) {
+        console.error('[CallPage] Failed to initialize Bolna:', error);
+        setIsBolnaReady(false);
+      }
+    };
+
+    if (callConfig?.provider === 'bolna' && callConfig?.ready) {
+      initBolna();
+    }
+  }, [callConfig?.provider, callConfig?.ready]);
+
+  // Initialize Vapi (fallback)
   useEffect(() => {
     const initVapi = async () => {
+      // Only initialize Vapi if not using Bolna
+      if (callConfig?.provider === 'bolna') {
+        setIsVapiReady(false);
+        return;
+      }
+
       const publicKey = callConfig?.publicKey || import.meta.env.VITE_VAPI_PUBLIC_KEY;
 
       if (!publicKey) {
@@ -189,7 +225,7 @@ export default function CallPage() {
       }
     };
 
-    if (callConfig?.ready || import.meta.env.VITE_VAPI_PUBLIC_KEY) {
+    if ((callConfig?.ready && callConfig?.provider !== 'bolna') || import.meta.env.VITE_VAPI_PUBLIC_KEY) {
       initVapi();
     }
 
@@ -201,7 +237,13 @@ export default function CallPage() {
         vapiRef.current.stop();
       }
 
-      // 2. Stop the Microphone (Browser Native)
+      // 2. Stop Bolna WebSocket
+      if (bolnaWsRef.current) {
+        bolnaWsRef.current.close();
+        bolnaWsRef.current = null;
+      }
+
+      // 3. Stop the Microphone (Browser Native)
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
       }
@@ -209,10 +251,10 @@ export default function CallPage() {
         stream.getTracks().forEach(track => track.stop());
       }).catch(() => { });
 
-      // 3. Stop the AI Speech (Browser Native)
+      // 4. Stop the AI Speech (Browser Native)
       window.speechSynthesis.cancel();
 
-      // 4. Stop any HTML Audio elements
+      // 5. Stop any HTML Audio elements
       const audioElements = document.querySelectorAll('audio');
       audioElements.forEach(audio => {
         audio.pause();
@@ -222,7 +264,7 @@ export default function CallPage() {
       stopTimer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callConfig?.publicKey]);
+  }, [callConfig?.publicKey, callConfig?.provider]);
 
   const startTimer = useCallback(() => {
     console.log('[Timer] Starting timer...');
@@ -296,7 +338,10 @@ export default function CallPage() {
       return;
     }
 
-    if (!isVapiReady || !vapiRef.current) {
+    const provider = callConfig?.provider || 'vapi';
+    const isReady = provider === 'bolna' ? isBolnaReady : (isVapiReady && vapiRef.current);
+
+    if (!isReady || !callConfig?.ready) {
       toast({
         title: 'Not Ready',
         description: configLoading
@@ -312,59 +357,145 @@ export default function CallPage() {
       setStatusText('Starting conversation...');
       analytics.track("voice_call_started");
 
-      // OPTIMIZED FOR INSTANT RESPONSES - ZERO LATENCY
-      // Start Vapi IMMEDIATELY on user click.
-      const vapiStartPromise = vapiRef.current.start({
-        model: {
-          provider: "openai",
-          model: "gpt-4o-mini", // Fastest OpenAI model
-          messages: [
-            {
-              role: "system",
-              content: AI_ASSISTANTS.Riya.systemPrompt
-            }
-          ],
-          // CRITICAL: Optimize for instant responses
-          maxTokens: 80, // Very short responses = faster generation
-          temperature: 0.8, // Slightly higher for naturalness but still fast
-          topP: 0.9,
-          frequencyPenalty: 0.3,
-          presencePenalty: 0.3,
-        },
-        voice: {
-          provider: "11labs",
-          voiceId: "21m00Tcm4TlvDq8ikWAM", // Standard Voice (Rachel) to fix audio
-          stability: 0.5, // Faster voice generation
-          similarityBoost: 0.75,
-        },
-        // Remove firstMessage delay - let user speak first for instant response
-        // firstMessage: "Hey baby! Kaisi ho tum? I missed talking to you. Aaj kya chal raha hai?",
-        
-        // CRITICAL: Zero delay settings for instant responses
-        responseDelay: 0, // No artificial delay
-        silenceTimeout: 500, // Detect silence quickly (500ms)
-        maxDurationSeconds: 600, // Long call support
-        
-        // Enable real-time streaming
-        serverUrl: undefined, // Use default (fastest region)
-        
-        // Optimize transcription for speed
-        transcriber: {
-          provider: "deepgram",
-          model: "nova-2", // Fastest Deepgram model
-          language: "en",
-          keywords: ["baby", "jaan", "theek", "acha"], // Help with Hinglish
-        },
-      });
+      if (provider === 'bolna') {
+        // Start Bolna call via backend API
+        const sessionResult = await startCallMutation.mutateAsync({
+          provider: 'bolna'
+        });
 
-      // Start backend tracking in background
-      startCallMutation.mutateAsync({}).then((sessionResult) => {
         if (sessionResult?.id) {
           callSessionIdRef.current = sessionResult.id;
         }
-      }).catch(err => console.error("Failed to track call start:", err));
 
-      await vapiStartPromise;
+        if (sessionResult?.bolna_call_id) {
+          bolnaCallIdRef.current = sessionResult.bolna_call_id;
+          
+          // Connect to Bolna WebSocket for real-time updates
+          const wsUrl = callConfig.apiUrl?.replace('https://', 'wss://').replace('http://', 'ws://') + `/calls/${sessionResult.bolna_call_id}/ws`;
+          const ws = new WebSocket(wsUrl);
+          bolnaWsRef.current = ws;
+
+          ws.onopen = () => {
+            console.log('[Bolna] WebSocket connected');
+            setCallStatus('connected');
+            setStatusText('Connected');
+            setSessionDuration(0);
+            startTimer();
+          };
+
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              console.log('[Bolna] WebSocket message:', data);
+
+              switch (data.type) {
+                case 'call.started':
+                case 'call_started':
+                  setCallStatus('connected');
+                  setStatusText('Connected');
+                  startTimer();
+                  break;
+                case 'call.ended':
+                case 'call_ended':
+                  setCallStatus('ended');
+                  setStatusText('Call ended');
+                  stopTimer();
+                  handleEndCall();
+                  break;
+                case 'speech.start':
+                case 'speech_start':
+                  setCallStatus('speaking');
+                  setStatusText('Riya is speaking...');
+                  break;
+                case 'speech.end':
+                case 'speech_end':
+                  setCallStatus('listening');
+                  setStatusText('Listening... Speak now!');
+                  break;
+                case 'transcript':
+                case 'transcript.updated':
+                  if (data.transcript) {
+                    const entry = `[${data.role?.toUpperCase() || 'USER'}]: ${data.transcript}`;
+                    transcriptRef.current.push(entry);
+                    setCallTranscript(transcriptRef.current.join('\n'));
+                  }
+                  break;
+                case 'volume':
+                case 'volume_level':
+                  if (data.level !== undefined) {
+                    setVolumeLevel(data.level);
+                  }
+                  break;
+              }
+            } catch (error) {
+              console.error('[Bolna] Failed to parse WebSocket message:', error);
+            }
+          };
+
+          ws.onerror = (error) => {
+            console.error('[Bolna] WebSocket error:', error);
+            setCallStatus('idle');
+            setStatusText('Connection failed');
+            toast({
+              title: 'Call Error',
+              description: 'Failed to connect to call',
+              variant: 'destructive',
+            });
+          };
+
+          ws.onclose = () => {
+            console.log('[Bolna] WebSocket closed');
+            bolnaWsRef.current = null;
+          };
+        }
+      } else {
+        // Vapi fallback
+        if (!vapiRef.current) {
+          throw new Error('Vapi not initialized');
+        }
+
+        const vapiStartPromise = vapiRef.current.start({
+          model: {
+            provider: "openai",
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: AI_ASSISTANTS.Riya.systemPrompt
+              }
+            ],
+            maxTokens: 80,
+            temperature: 0.8,
+            topP: 0.9,
+            frequencyPenalty: 0.3,
+            presencePenalty: 0.3,
+          },
+          voice: {
+            provider: "11labs",
+            voiceId: "21m00Tcm4TlvDq8ikWAM",
+            stability: 0.5,
+            similarityBoost: 0.75,
+          },
+          responseDelay: 0,
+          silenceTimeout: 500,
+          maxDurationSeconds: 600,
+          serverUrl: undefined,
+          transcriber: {
+            provider: "deepgram",
+            model: "nova-2",
+            language: "en",
+            keywords: ["baby", "jaan", "theek", "acha"],
+          },
+        });
+
+        startCallMutation.mutateAsync({ provider: 'vapi' }).then((sessionResult) => {
+          if (sessionResult?.id) {
+            callSessionIdRef.current = sessionResult.id;
+          }
+        }).catch(err => console.error("Failed to track call start:", err));
+
+        await vapiStartPromise;
+      }
 
     } catch (error: any) {
       console.error('Failed to start call:', error);
@@ -430,8 +561,11 @@ export default function CallPage() {
         const fullTranscript = transcriptRef.current.join('\n');
         console.log('📝 Saving transcript:', fullTranscript ? `${fullTranscript.length} characters` : 'empty');
 
+        const provider = callConfig?.provider || 'vapi';
         endCallMutation.mutate({
           sessionId: callSessionIdRef.current,
+          bolnaCallId: provider === 'bolna' ? bolnaCallIdRef.current || undefined : undefined,
+          vapiCallId: provider === 'vapi' ? undefined : undefined,
           durationSeconds: sessionDuration,
           endReason: 'user_ended',
           transcript: fullTranscript || 'No transcript available'
@@ -483,6 +617,7 @@ export default function CallPage() {
       setIsMuted(false);
       sessionDurationRef.current = 0;
       callSessionIdRef.current = null;
+      bolnaCallIdRef.current = null;
       transcriptRef.current = []; // Clear transcript
       setCallTranscript('');
 
@@ -556,7 +691,9 @@ export default function CallPage() {
   };
 
   const isCallActive = callStatus !== 'idle' && callStatus !== 'ended';
-  const vapiConfigured = isVapiConfigured() || !!callConfig?.publicKey;
+  const callConfigured = callConfig?.provider === 'bolna' 
+    ? (isBolnaReady && callConfig?.ready)
+    : (isVapiConfigured() || !!callConfig?.publicKey);
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">

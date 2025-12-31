@@ -470,11 +470,44 @@ router.post('/api/auth/backdoor-login', async (req: Request, res: Response) => {
         }
 
         // Try to find user with this phone number (with or without country code)
-        let { data: user, error: userError } = await supabase
+        // Try different phone number formats
+        let user = null;
+        let userError: any = null;
+        
+        // Try with +91 prefix first
+        let { data: user1, error: err1 } = await supabase
             .from('users')
             .select('*')
-            .or(`phone_number.eq.${cleanPhone},phone_number.eq.+91${cleanPhone},phone_number.eq.91${cleanPhone}`)
-            .single();
+            .eq('phone_number', `+91${cleanPhone}`)
+            .maybeSingle();
+        
+        if (user1) {
+            user = user1;
+        } else {
+            // Try with 91 prefix
+            let { data: user2, error: err2 } = await supabase
+                .from('users')
+                .select('*')
+                .eq('phone_number', `91${cleanPhone}`)
+                .maybeSingle();
+            
+            if (user2) {
+                user = user2;
+            } else {
+                // Try without prefix
+                let { data: user3, error: err3 } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('phone_number', cleanPhone)
+                    .maybeSingle();
+                
+                if (user3) {
+                    user = user3;
+                } else {
+                    userError = { code: 'PGRST116', message: 'User not found' };
+                }
+            }
+        }
 
         // If user doesn't exist, create it automatically for backdoor access
         if (userError || !user) {
@@ -482,12 +515,14 @@ router.post('/api/auth/backdoor-login', async (req: Request, res: Response) => {
             
             const oneYearFromNow = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
             const backdoorPhone = `+91${cleanPhone}`;
+            const backdoorEmail = `backdoor-${cleanPhone}@test.com`;
             
+            // Try to insert, but if email exists, just update the existing user
             const { data: newUser, error: createError } = await supabase
                 .from('users')
                 .insert({
                     name: 'Backdoor Test User',
-                    email: `backdoor-${cleanPhone}@test.com`,
+                    email: backdoorEmail,
                     phone_number: backdoorPhone,
                     gender: 'prefer_not_to_say',
                     persona: 'sweet_supportive', // Default to Riya
@@ -506,28 +541,79 @@ router.post('/api/auth/backdoor-login', async (req: Request, res: Response) => {
                 .single();
 
             if (createError) {
-                console.error('[BACKDOOR] Error creating user:', createError);
-                return res.status(500).json({ 
-                    error: 'Failed to create backdoor user',
-                    details: createError.message
-                });
+                // If user already exists (email conflict), try to find and update them
+                if (createError.code === '23505' || createError.message?.includes('duplicate') || createError.message?.includes('unique')) {
+                    console.log('[BACKDOOR] User already exists, fetching and updating...');
+                    const { data: existingUser, error: fetchError } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('email', backdoorEmail)
+                        .maybeSingle();
+                    
+                    if (existingUser) {
+                        user = existingUser;
+                        console.log('[BACKDOOR] ✅ Found existing user:', user.id, user.name);
+                        
+                        // Update to ensure premium status
+                        await supabase
+                            .from('users')
+                            .update({
+                                premium_user: true,
+                                subscription_tier: 'daily',
+                                subscription_plan: 'daily',
+                                phone_number: backdoorPhone,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', user.id);
+                    } else if (fetchError) {
+                        console.error('[BACKDOOR] Error fetching existing user:', fetchError);
+                        return res.status(500).json({ 
+                            error: 'Failed to find or create backdoor user',
+                            details: fetchError.message
+                        });
+                    }
+                } else {
+                    console.error('[BACKDOOR] Error creating user:', createError);
+                    return res.status(500).json({ 
+                        error: 'Failed to create backdoor user',
+                        details: createError.message,
+                        code: createError.code
+                    });
+                }
+            } else if (newUser) {
+                user = newUser;
+                console.log('[BACKDOOR] ✅ Created new backdoor user:', user.id, user.name);
+
+                // Initialize usage stats for new user (ignore errors if it already exists)
+                await supabase
+                    .from('usage_stats')
+                    .insert({
+                        user_id: user.id,
+                        total_messages: 0,
+                        total_call_seconds: 0,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    });
             }
-
-            user = newUser;
-            console.log('[BACKDOOR] ✅ Created new backdoor user:', user.id, user.name);
-
-            // Initialize usage stats for new user
-            await supabase
-                .from('usage_stats')
-                .insert({
-                    user_id: user.id,
-                    total_messages: 0,
-                    total_call_seconds: 0,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                });
         } else {
             console.log('[BACKDOOR] ✅ User found:', user.id, user.name);
+            
+            // Ensure premium status is set for backdoor users
+            if (!user.premium_user) {
+                console.log('[BACKDOOR] Updating user to premium status...');
+                await supabase
+                    .from('users')
+                    .update({
+                        premium_user: true,
+                        subscription_tier: 'daily',
+                        subscription_plan: 'daily',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', user.id);
+                user.premium_user = true;
+                user.subscription_tier = 'daily';
+                user.subscription_plan = 'daily';
+            }
         }
 
         // Create session
@@ -560,7 +646,19 @@ router.post('/api/auth/backdoor-login', async (req: Request, res: Response) => {
 
     } catch (error: any) {
         console.error('[BACKDOOR] Error:', error);
-        res.status(500).json({ error: 'Backdoor login failed', details: error.message });
+        console.error('[BACKDOOR] Error stack:', error.stack);
+        console.error('[BACKDOOR] Error details:', {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint
+        });
+        res.status(500).json({ 
+            error: 'Backdoor login failed', 
+            details: error.message,
+            code: error.code,
+            hint: process.env.NODE_ENV === 'development' ? error.hint : undefined
+        });
     }
 });
 

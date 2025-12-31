@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Backdoor Test</title>
+</head>
+<body>
+    <h1>🔓 Backdoor Test Page</h1>
+    <p>If you can see this, the server is running.</p>
+    <button onclick="localStorage.setItem('backdoor_enabled', 'true'); alert('Backdoor enabled! Now go to /chat'); window.location.href='/chat'">
+        Enable Backdoor & Go to Chat
+    </button>
+    <br><br>
+    <button onclick="localStorage.removeItem('backdoor_enabled'); alert('Backdoor disabled');">
+        Disable Backdoor
+    </button>
+    <br><br>
+    <p>Or open browser console and type: <code>localStorage.setItem('backdoor_enabled', 'true')</code></p>
+    <p>Then refresh and go to <a href="/chat">/chat</a></p>
+</body>
+</html>

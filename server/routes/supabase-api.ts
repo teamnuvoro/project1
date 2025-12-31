@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { supabase, PERSONA_CONFIGS, isSupabaseConfigured, type PersonaType, type User, type Session, type Message, type UsageStats } from '../supabase';
-import { checkUserHasPayment, checkUserHasActiveSubscription } from '../utils/checkUserHasPayment';
+import { getPersona } from '../persona-engine/personaLoader';
+import { personaExists } from '../personas';
+import { checkPremiumStatus } from '../utils/checkPremiumStatus';
 
 const router = Router();
 
@@ -79,30 +81,84 @@ router.patch('/api/user', async (req: Request, res: Response) => {
 // Update user persona
 router.patch('/api/user/persona', async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).session?.userId || DEV_USER_ID;
-    const { persona } = req.body as { persona: PersonaType };
+    console.log('[PATCH /api/user/persona] Request body:', JSON.stringify(req.body));
+    
+    // Get userId from request body, session, or fallback to dev
+    const userId = req.body?.userId || (req as any).session?.userId || DEV_USER_ID;
+    const { persona: requestedPersonaId } = req.body as { persona: string; userId?: string };
 
-    if (!persona || !PERSONA_CONFIGS[persona]) {
-      return res.status(400).json({ error: 'Invalid persona type' });
+    if (!requestedPersonaId) {
+      console.error('[PATCH /api/user/persona] No persona ID provided in request');
+      return res.status(400).json({ error: 'Persona ID is required' });
     }
+
+    console.log(`[PATCH /api/user/persona] Requested persona: ${requestedPersonaId}, User: ${userId}`);
+
+    // Map old persona IDs to new ones (for accepting old IDs from frontend)
+    const oldToNewPersonaMap: Record<string, string> = {
+      'sweet_supportive': 'sweet_supportive',
+      'playful_flirty': 'flirtatious',  // Map old to new
+      'flirtatious': 'flirtatious',
+      'playful': 'playful',
+      'bold_confident': 'dominant',     // Map old to new
+      'dominant': 'dominant',
+      'calm_mature': 'calm_mature',
+    };
+
+    // Map new persona IDs to old ones for database storage (backward compatibility)
+    const personaIdToOldType: Record<string, PersonaType> = {
+      'sweet_supportive': 'sweet_supportive',
+      'flirtatious': 'playful_flirty',
+      'playful': 'playful_flirty',
+      'dominant': 'bold_confident',
+      'calm_mature': 'calm_mature',
+    };
+
+    // Convert old persona ID to new one if needed
+    const normalizedPersonaId = oldToNewPersonaMap[requestedPersonaId] || requestedPersonaId;
+    console.log(`[PATCH /api/user/persona] Original: ${requestedPersonaId}, Normalized: ${normalizedPersonaId}`);
+
+    // Validate using persona engine - check if persona actually exists (not just fallback)
+    const personaExistsCheck = personaExists(normalizedPersonaId);
+    console.log(`[PATCH /api/user/persona] Persona exists check: ${personaExistsCheck} for ID: ${normalizedPersonaId}`);
+    
+    if (!personaExistsCheck) {
+      console.error(`[PATCH /api/user/persona] Invalid persona ID: ${requestedPersonaId} (normalized: ${normalizedPersonaId})`);
+      const availablePersonas = ['sweet_supportive', 'flirtatious', 'playful', 'dominant', 'calm_mature'];
+      return res.status(400).json({ 
+        error: `Invalid persona type: ${requestedPersonaId}`,
+        available: availablePersonas
+      });
+    }
+    
+    // Get the persona (will be valid since we checked existence)
+    const persona = getPersona(normalizedPersonaId);
+    console.log(`[PATCH /api/user/persona] Loaded persona: ${persona.id} (${persona.name})`);
+
+    // Get old persona type for database storage (backward compatibility)
+    const oldPersonaType = personaIdToOldType[persona.id] || persona.id as PersonaType;
 
     // If Supabase is not configured, just return success (dev mode)
     if (!isSupabaseConfigured) {
-      console.log(`[PATCH /api/user/persona] Dev mode: User ${userId} selected persona: ${persona}`);
+      console.log(`[PATCH /api/user/persona] Dev mode: User ${userId} selected persona: ${persona.id} (${persona.name})`);
       return res.json({
         success: true,
-        persona,
-        personaConfig: PERSONA_CONFIGS[persona],
+        persona: persona.id,
+        personaConfig: {
+          id: persona.id,
+          name: persona.name,
+          description: persona.description,
+        },
         message: 'Persona updated (dev mode - not persisted)'
       });
     }
 
-    // Try to update in Supabase
+    // Try to update in Supabase (using old type for backward compatibility)
     const { data, error } = await supabase
       .from('users')
       .upsert({
         id: userId,
-        persona,
+        persona: oldPersonaType, // Store old type in database
         updated_at: new Date().toISOString()
       })
       .select()
@@ -111,27 +167,46 @@ router.patch('/api/user/persona', async (req: Request, res: Response) => {
     if (error) {
       console.error('[PATCH /api/user/persona] Supabase error:', error);
       // Fallback to dev mode if Supabase fails
-      console.log(`[PATCH /api/user/persona] Falling back to dev mode for persona: ${persona}`);
+      console.log(`[PATCH /api/user/persona] Falling back to dev mode for persona: ${persona.id}`);
       return res.json({
         success: true,
-        persona,
-        personaConfig: PERSONA_CONFIGS[persona],
+        persona: persona.id,
+        personaConfig: {
+          id: persona.id,
+          name: persona.name,
+          description: persona.description,
+        },
         message: 'Persona updated (dev mode - Supabase unavailable)'
       });
     }
 
-    res.json({ success: true, persona, personaConfig: PERSONA_CONFIGS[persona] });
+    res.json({ 
+      success: true, 
+      persona: persona.id,
+      personaConfig: {
+        id: persona.id,
+        name: persona.name,
+        description: persona.description,
+      }
+    });
   } catch (error: any) {
     console.error('[PATCH /api/user/persona] Error:', error);
-    // Even on error, return success in dev mode to prevent UI blocking
-    const { persona } = req.body as { persona: PersonaType };
-    if (persona && PERSONA_CONFIGS[persona]) {
-      return res.json({
-        success: true,
-        persona,
-        personaConfig: PERSONA_CONFIGS[persona],
-        message: 'Persona updated (dev mode - error handled)'
-      });
+    // Even on error, try to return success if persona is valid
+    const { persona: requestedPersonaId } = req.body as { persona: string };
+    if (requestedPersonaId) {
+      const persona = getPersona(requestedPersonaId);
+      if (persona) {
+        return res.json({
+          success: true,
+          persona: persona.id,
+          personaConfig: {
+            id: persona.id,
+            name: persona.name,
+            description: persona.description,
+          },
+          message: 'Persona updated (dev mode - error handled)'
+        });
+      }
     }
     res.status(500).json({ error: error.message });
   }
@@ -196,8 +271,8 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
       console.log('[/api/user/usage] Using default stats:', e);
     }
 
-    // Calculate message limit (20 for free users, unlimited for premium)
-    const messageLimit = isPremium ? 999999 : 20;
+    // Calculate message limit (1000 for free users, unlimited for premium)
+    const messageLimit = isPremium ? 999999 : 1000;
     const messageLimitReached = !isPremium && stats.total_messages >= messageLimit;
 
     res.json({
@@ -227,6 +302,19 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
     // Get userId from request body (frontend sends it), session, or fallback to dev
     const userId = req.body?.userId || (req as any).session?.userId || DEV_USER_ID;
     const { incrementMessages, incrementCallSeconds } = req.body;
+
+    // Handle backdoor user - return premium status without database queries
+    if (userId === 'backdoor-user-id' || userId === '00000000-0000-0000-0000-000000000001') {
+      console.log(`[User Usage] Backdoor user detected: ${userId} - returning premium status`);
+      return res.json({
+        messageCount: 0,
+        callDuration: 0,
+        premiumUser: true,
+        subscriptionPlan: 'daily',
+        messageLimitReached: false,
+        callLimitReached: false,
+      });
+    }
 
     let currentMessages = 0;
     let currentSeconds = 0;
@@ -262,37 +350,38 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
         console.error('[POST /api/user/usage] Supabase error:', error);
       }
 
-      // NEW LOGIC: Check payments table for successful payments
-      // This is the source of truth - users with successful payments have premium access
+      // Use unified premium status check (same as chat endpoint)
+      // This ensures consistency across all endpoints
       try {
-        const paymentCheck = await checkUserHasPayment(supabase, userId);
-        const subscriptionCheck = await checkUserHasActiveSubscription(supabase, userId);
+        const premiumStatus = await checkPremiumStatus(supabase, userId);
+        isPremium = premiumStatus.isPremium;
+        subscriptionPlan = premiumStatus.planType || (isPremium ? 'daily' : null);
         
-        // User has premium access if they have successful payment OR active subscription
-        isPremium = paymentCheck.hasPayment || subscriptionCheck;
+        console.log(`[User Usage] User ${userId} premium status: ${isPremium} (Source: ${premiumStatus.source}, Plan: ${subscriptionPlan || 'N/A'})`);
         
-        if (paymentCheck.hasPayment) {
-          subscriptionPlan = paymentCheck.planType || 'daily';
-          console.log(`[User Usage] User ${userId} has premium via payment: ${subscriptionPlan}`);
-        } else if (subscriptionCheck) {
-          // Get subscription plan from subscriptions table
-          const { data: subData } = await supabase
-            .from('subscriptions')
-            .select('plan_type')
-            .eq('user_id', userId)
-            .eq('status', 'active')
-            .limit(1)
+        // If premium check failed but we have a valid UUID, log more details
+        if (!isPremium && premiumStatus.source === 'none') {
+          console.warn(`[User Usage] ⚠️ Premium check returned false for user ${userId}. Checking database directly...`);
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('premium_user, subscription_tier, subscription_plan')
+            .eq('id', userId)
             .single();
           
-          subscriptionPlan = subData?.plan_type || 'daily';
-          console.log(`[User Usage] User ${userId} has premium via subscription: ${subscriptionPlan}`);
-        } else {
-          isPremium = false;
-          subscriptionPlan = null;
-          console.log(`[User Usage] User ${userId} is FREE - no successful payments`);
+          if (userError) {
+            console.error(`[User Usage] Database error checking user ${userId}:`, userError);
+          } else if (userData) {
+            console.log(`[User Usage] User data from DB:`, {
+              premium_user: userData.premium_user,
+              subscription_tier: userData.subscription_tier,
+              subscription_plan: userData.subscription_plan
+            });
+          } else {
+            console.warn(`[User Usage] User ${userId} not found in database`);
+          }
         }
-      } catch (paymentCheckError) {
-        console.warn('[User Usage] Error checking payments, falling back to user table:', paymentCheckError);
+      } catch (premiumCheckError) {
+        console.error('[User Usage] Error checking premium status:', premiumCheckError);
         // Fallback: check user table (legacy support)
         const { data: userData } = await supabase
           .from('users')
@@ -303,14 +392,15 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
         if (userData) {
           isPremium = userData.premium_user || false;
           subscriptionPlan = userData.subscription_plan;
+          console.log(`[User Usage] Fallback: Using user table data - premium: ${isPremium}`);
         }
       }
     } catch (e) {
       console.log('[POST /api/user/usage] Using local counters:', e);
     }
 
-    // Calculate message limit (20 for free users, unlimited for premium)
-    const messageLimit = isPremium ? 999999 : 20;
+    // Calculate message limit (1000 for free users, unlimited for premium)
+    const messageLimit = isPremium ? 999999 : 1000;
     const finalMessageCount = currentMessages + (incrementMessages || 0);
     const messageLimitReached = !isPremium && finalMessageCount >= messageLimit;
 

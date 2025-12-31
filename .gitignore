@@ -12,3 +12,4 @@ client/.env.local
 *.env.bak
 update-cashfree-keys.sh
 
+ENV_FOR_WHATSAPP.txt

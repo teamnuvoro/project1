@@ -98,10 +98,10 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
       
       script.onload = () => {
         if (window.Razorpay) {
-          resolve(true);
-        } else {
+            resolve(true);
+          } else {
           reject(new Error('Razorpay SDK failed to initialize'));
-        }
+          }
       };
       
       script.onerror = () => {
@@ -197,11 +197,11 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
           })
           .catch((error) => {
             console.error('Payment verification error:', error);
-            toast({
+          toast({
               title: "Payment Verification Error",
               description: "Payment may have succeeded. Please check your account status.",
-              variant: "destructive",
-            });
+            variant: "destructive",
+          });
           });
           
           setIsProcessing(false);
@@ -263,7 +263,7 @@ export function PaywallSheet({ open, onOpenChange, messageCount }: PaywallSheetP
             Oops! Your Daily Chats Are Done.
           </DialogTitle>
           <DialogDescription className="text-base">
-            You've used your 20 free messages for today. <span className="font-bold text-foreground">Unlock unlimited chats</span> with Riya by choosing a pass below.
+            You've used your 1000 free messages for today. <span className="font-bold text-foreground">Unlock unlimited chats</span> with Riya by choosing a pass below.
           </DialogDescription>
         </DialogHeader>
 

@@ -17,6 +17,7 @@ import transcribeRoutes from "./routes/deepgram-transcribe";
 import messagesHistoryRoutes from "./routes/messages-history";
 import analyticsRoutes from "./routes/analytics-events";
 import reminderRoutes from "./routes/reminders";
+import imageRoutes from "./routes/images";
 import { initializeReminderScheduler } from "./jobs/reminder-scheduler";
 
 const app = express();
@@ -37,8 +38,10 @@ app.get("/", (_req, res) => {
 // CORS - Allow requests from frontend (including ngrok for local HTTPS testing)
 app.use(cors({
   origin: [
-    'http://localhost:8080', 
+    'http://localhost:3001', // Frontend port
+    'http://localhost:8080', // Keep for backward compatibility
     'http://localhost:3000', 
+    'http://127.0.0.1:3001',
     'http://127.0.0.1:8080',
     process.env.NGROK_URL || 'https://prosurgical-nia-carpingly.ngrok-free.dev'
   ].filter(Boolean), // Remove any undefined values
@@ -114,6 +117,9 @@ app.use(analyticsRoutes);
 
 // Reminder routes (WhatsApp notifications)
 app.use(reminderRoutes);
+
+// Image management routes (chat images)
+app.use(imageRoutes);
 
 // Update user personality endpoint
 app.patch("/api/user/personality", async (req, res) => {

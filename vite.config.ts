@@ -44,8 +44,8 @@ export default defineConfig({
   publicDir: "public",
   server: {
     host: "0.0.0.0",
-    port: 8080,
-    strictPort: true,
+    port: 3001,
+    strictPort: false, // Allow fallback to next available port if 3001 is in use
     fs: {
       strict: true,
       deny: [".env", ".env.*", "*.{crt,pem,key}"],
