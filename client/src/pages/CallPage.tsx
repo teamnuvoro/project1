@@ -9,6 +9,7 @@ import { analytics } from "@/lib/analytics";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { isVapiConfigured, AI_ASSISTANTS } from '@/config/vapi-config';
+import { useBolnaCall } from '@/hooks/useBolnaCall';
 
 type CallStatus = 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'ended';
 
@@ -37,7 +38,10 @@ export default function CallPage() {
 
   const { data: callConfig, isLoading: configLoading } = useQuery<{
     ready: boolean;
+    provider?: string;
     publicKey?: string;
+    apiKey?: string;
+    agentId?: string;
     error?: string;
   }>({
     queryKey: ["/api/call/config"],
@@ -72,7 +76,7 @@ export default function CallPage() {
   });
 
   const endCallMutation = useMutation({
-    mutationFn: async (data: { sessionId?: string; durationSeconds: number; endReason: string; transcript?: string }) => {
+    mutationFn: async (data: { sessionId?: string; durationSeconds: number; endReason: string; transcript?: string; provider?: string; bolnaCallId?: string }) => {
       const response = await apiRequest("POST", "/api/call/end", data);
       return response.json();
     },
@@ -81,11 +85,68 @@ export default function CallPage() {
     },
   });
 
+  // Initialize Bolna call hook (only used when Bolna is the provider)
+  const bolnaCall = useBolnaCall();
+
   const totalUsedSeconds = userUsage?.callDuration || 0;
   const remainingFreeSeconds = Math.max(0, FREE_CALL_LIMIT_SECONDS - totalUsedSeconds);
 
+  // Update status text based on configuration (after callConfig and isVapiReady are declared)
+  useEffect(() => {
+    // Don't override status text during active call (handled by call status)
+    if (callStatus === 'connected' || callStatus === 'speaking' || callStatus === 'listening') {
+      return;
+    }
+    
+    if (configLoading) {
+      setStatusText('Loading configuration...');
+    } else if (callConfig?.provider === 'bolna' && callConfig?.ready) {
+      if (bolnaCall.isConnected) {
+        setStatusText('Connected - Start speaking...');
+      } else {
+        setStatusText('Ready to call with Bolna');
+      }
+    } else if (callConfig?.ready || isVapiReady) {
+      setStatusText('Tap to call Riya');
+    } else if (callConfig?.error) {
+      setStatusText('Configuration error');
+    } else {
+      setStatusText('Tap to call Riya');
+    }
+  }, [callConfig, configLoading, isVapiReady, callStatus, bolnaCall.isConnected]);
+
+  // Update transcript from Bolna
+  useEffect(() => {
+    if (bolnaCall.transcript && callStatus === 'connected') {
+      setCallTranscript(bolnaCall.transcript);
+      // Also update transcriptRef for saving
+      transcriptRef.current = bolnaCall.transcript.split('\n').filter(t => t.trim());
+    }
+  }, [bolnaCall.transcript, callStatus]);
+
+  // Handle Bolna errors
+  useEffect(() => {
+    if (bolnaCall.error && callStatus === 'connected') {
+      toast({
+        title: "Bolna Error",
+        description: bolnaCall.error,
+        variant: "destructive",
+      });
+      // Don't auto-end call - let user decide
+      // handleEndCall();
+    }
+  }, [bolnaCall.error, callStatus]);
+
   useEffect(() => {
     const initVapi = async () => {
+      // Check if Bolna is configured (priority provider)
+      if (callConfig?.provider === 'bolna') {
+        console.log('[CallPage] Bolna is configured, skipping Vapi initialization');
+        setIsVapiReady(true); // Set ready for Bolna
+        return;
+      }
+
+      // Fallback to Vapi if not using Bolna
       const publicKey = callConfig?.publicKey || import.meta.env.VITE_VAPI_PUBLIC_KEY;
 
       if (!publicKey) {
@@ -189,7 +250,10 @@ export default function CallPage() {
       }
     };
 
-    if (callConfig?.ready || import.meta.env.VITE_VAPI_PUBLIC_KEY) {
+    // Only initialize Vapi if not using Bolna
+    if (callConfig?.provider === 'bolna') {
+      setIsVapiReady(true); // Set ready for Bolna
+    } else if (callConfig?.ready || import.meta.env.VITE_VAPI_PUBLIC_KEY) {
       initVapi();
     }
 
@@ -238,7 +302,10 @@ export default function CallPage() {
         const isPremium = !!userUsage?.premiumUser;
         const timeLimit = FREE_CALL_LIMIT_SECONDS;
 
-        console.log(`[Timer] Tick: ${newSessionDuration}s | Total: ${currentTotal}s | Limit: ${timeLimit}s | Premium: ${isPremium}`);
+        // Only log every 10 seconds to reduce console noise
+        if (newSessionDuration % 10 === 0) {
+          console.log(`[Timer] Tick: ${newSessionDuration}s | Total: ${currentTotal}s | Limit: ${timeLimit}s | Premium: ${isPremium}`);
+        }
 
         // HARD LIMIT CHECK
         if (!isPremium && currentTotal >= timeLimit) {
@@ -296,6 +363,86 @@ export default function CallPage() {
       return;
     }
 
+    // Check if Bolna is configured
+    if (callConfig?.provider === 'bolna') {
+      if (!callConfig?.ready) {
+        toast({
+          title: 'Not Ready',
+          description: configLoading
+            ? 'Loading voice calling configuration...'
+            : 'Voice calling is not available. Please check configuration.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        setCallStatus('connecting');
+        setStatusText('Starting conversation...');
+        analytics.track("voice_call_started", { provider: 'bolna' });
+
+        // Start backend call session
+        const sessionResult = await startCallMutation.mutateAsync({
+          provider: 'bolna'
+        });
+
+        if (!sessionResult?.id) {
+          throw new Error('Failed to create call session');
+        }
+
+        callSessionIdRef.current = sessionResult.id;
+        
+        // Get Bolna call ID from response or use session ID as fallback
+        const bolnaCallId = sessionResult.bolna_call_id || sessionResult.id;
+        
+        console.log('[CallPage] Bolna session created:', {
+          sessionId: sessionResult.id,
+          bolnaCallId: bolnaCallId,
+          fullResponse: sessionResult
+        });
+
+        if (!bolnaCallId) {
+          throw new Error('No Bolna call ID returned from server');
+        }
+
+        // Get websocket URL from session result if available
+        const websocketUrl = sessionResult.websocket_url || sessionResult.websocketUrl;
+        
+        console.log('[CallPage] Attempting to connect to Bolna WebSocket:', {
+          callId: bolnaCallId,
+          websocketUrl: websocketUrl || 'will be constructed'
+        });
+        
+        await bolnaCall.connect(bolnaCallId, websocketUrl);
+        
+        // Start recording microphone
+        await bolnaCall.startRecording();
+
+        // Update UI state
+        setCallStatus('connected');
+        setStatusText('Connected - Start speaking...');
+        startTimer();
+
+        toast({
+          title: "Call Started",
+          description: "Connected to Bolna. You can now speak!",
+          variant: "default",
+        });
+
+      } catch (error: any) {
+        console.error('[CallPage] Bolna call start error:', error);
+        setCallStatus('idle');
+        setStatusText('Tap to call Riya');
+        toast({
+          title: "Call Failed",
+          description: error.message || "Failed to start voice call with Bolna",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    // For Vapi/Sarvam - check Vapi readiness
     if (!isVapiReady || !vapiRef.current) {
       toast({
         title: 'Not Ready',
@@ -377,7 +524,118 @@ export default function CallPage() {
       });
     }
   };
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
+    console.log('🔴 END CALL BUTTON CLICKED');
+    console.log('Call status:', callStatus);
+    console.log('Provider:', callConfig?.provider);
+    console.log('Bolna connected:', bolnaCall.isConnected);
+    
+    // Check if this is a Bolna call (check provider first, not connection status)
+    if (callConfig?.provider === 'bolna') {
+      try {
+        console.log('[CallPage] Ending Bolna call...');
+        
+        // Stop recording
+        bolnaCall.stopRecording();
+        
+        // Disconnect WebSocket
+        bolnaCall.disconnect();
+        
+        // Stop timer
+        stopTimer();
+        
+        // Track analytics
+        analytics.track("voice_call_ended", { duration: sessionDuration, provider: 'bolna' });
+        
+        // Save to backend
+        if (callSessionIdRef.current && sessionDuration > 0) {
+          const transcript = bolnaCall.transcript || 'No transcript available';
+          endCallMutation.mutate({
+            sessionId: callSessionIdRef.current,
+            durationSeconds: sessionDuration,
+            endReason: 'user_ended',
+            transcript,
+            provider: 'bolna',
+            bolnaCallId: callSessionIdRef.current // Use session ID or get actual call ID if stored
+          });
+        }
+        
+        // Reset UI state
+        setCallStatus('idle');
+        setStatusText('Tap to call Riya');
+        setSessionDuration(0);
+        callSessionIdRef.current = null;
+        
+        toast({
+          title: "Call Ended",
+          description: `Call duration: ${formatTime(sessionDuration)}`,
+          variant: "default",
+        });
+        
+        return;
+      } catch (error: any) {
+        console.error('[CallPage] Error ending Bolna call:', error);
+        toast({
+          title: "Error",
+          description: "Error ending call",
+          variant: "destructive",
+        });
+      }
+    }
+    
+    // Original Vapi/Sarvam end call logic
+    // Handle Bolna calls
+    if (callConfig?.provider === 'bolna' && bolnaCall.isConnected) {
+      try {
+        console.log('[CallPage] Ending Bolna call...');
+        
+        // Stop recording and disconnect
+        bolnaCall.stopRecording();
+        bolnaCall.disconnect();
+        
+        // Stop timer
+        stopTimer();
+        
+        // Track analytics
+        analytics.track("voice_call_ended", { duration: sessionDuration, provider: 'bolna' });
+        
+        // Save to backend
+        if (callSessionIdRef.current && sessionDuration > 0) {
+          const transcript = bolnaCall.transcript || 'No transcript available';
+          endCallMutation.mutate({
+            sessionId: callSessionIdRef.current,
+            durationSeconds: sessionDuration,
+            endReason: 'user_ended',
+            transcript,
+            provider: 'bolna'
+          });
+        }
+        
+        // Reset UI state
+        setCallStatus('idle');
+        setStatusText('Tap to call Riya');
+        setSessionDuration(0);
+        callSessionIdRef.current = null;
+        
+        toast({
+          title: "Call Ended",
+          description: `Call duration: ${formatTime(sessionDuration)}`,
+          variant: "default",
+        });
+        
+        return;
+      } catch (error: any) {
+        console.error('[CallPage] Error ending Bolna call:', error);
+        toast({
+          title: "Error",
+          description: "Error ending call",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // Handle Vapi/Sarvam calls
     console.log('🔴 END CALL BUTTON CLICKED - NUCLEAR SHUTDOWN!');
     console.log('Call status:', callStatus);
     console.log('Vapi ref exists:', !!vapiRef.current);
@@ -538,11 +796,38 @@ export default function CallPage() {
     }
   };
 
-  const toggleMute = () => {
+  const toggleMute = async () => {
+    // Handle Bolna calls
+    if (callConfig?.provider === 'bolna' && bolnaCall.isConnected) {
+      const newMuted = !isMuted;
+      setIsMuted(newMuted);
+      
+      // Stop/start recording for Bolna
+      if (newMuted) {
+        bolnaCall.stopRecording();
+      } else {
+        await bolnaCall.startRecording();
+      }
+      
+      toast({
+        title: newMuted ? 'Microphone Muted' : 'Microphone Unmuted',
+        description: 'Microphone toggled',
+        duration: 2000,
+      });
+      return;
+    }
+    
+    // Handle Vapi/Sarvam calls
     if (vapiRef.current) {
       const newMuted = !isMuted;
       vapiRef.current.setMuted(newMuted);
       setIsMuted(newMuted);
+      
+      toast({
+        title: newMuted ? 'Microphone Muted' : 'Microphone Unmuted',
+        description: 'Microphone toggled',
+        duration: 2000,
+      });
     }
   };
 

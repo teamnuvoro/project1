@@ -108,10 +108,10 @@ export const PAYWALL_MESSAGE = `You've reached your free message limit! 🎁
 
 Upgrade to continue chatting with Riya:
 
-- Daily Pass: ₹19 (20 messages)
+- Daily Pass: ₹19 (unlimited messages)
 
-- Weekly Pass: ₹49 (200 messages)
+- Weekly Pass: ₹49 (unlimited messages)
 
 Your love story is just beginning... unlock unlimited chat today! 💕`;
 
-export const FREE_MESSAGE_LIMIT = 20; // Enforce 20 message limit
+export const FREE_MESSAGE_LIMIT = 1000; // Free users get 1000 messages

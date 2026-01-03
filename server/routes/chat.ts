@@ -3,6 +3,15 @@ import { supabase, isSupabaseConfigured, PERSONA_CONFIGS, type PersonaType } fro
 import { RIYA_BASE_PROMPT, FREE_MESSAGE_LIMIT, PAYWALL_MESSAGE } from "../prompts";
 import Groq from "groq-sdk";
 import { checkMessageQuota, logUserMessage } from "../utils/messageQuota";
+import { detectImageRequest } from "../services/image-detection";
+import { getRandomImage } from "../services/image-service";
+import { checkPremiumStatus } from "../utils/checkPremiumStatus";
+// Persona Engine imports
+import { getPersona } from "../persona-engine/personaLoader";
+import { adaptMemory } from "../persona-engine/memoryAdapter";
+import { checkSafety, logSafetyEvent } from "../persona-engine/safetyLayer";
+import { composePrompt } from "../persona-engine/promptComposer";
+import { postProcess } from "../persona-engine/postProcessor";
 
 // ============================================
 // Phase 2: AI & Romance Metrics Utilities
@@ -173,7 +182,7 @@ async function getUserMessageCount(userId: string): Promise<number> {
       return 999999;
     }
 
-    // Free user: get total message count (20 message limit)
+    // Free user: get total message count (1000 message limit)
     const { data: usage } = await supabase
       .from('usage_stats')
       .select('total_messages')
@@ -236,17 +245,99 @@ router.post("/api/session", async (req: Request, res: Response) => {
       });
     }
 
-    // Check for existing active session
+    // Handle backdoor user ID (not a valid UUID) - skip database queries
+    if (userId === 'backdoor-user-id' || userId === '00000000-0000-0000-0000-000000000001') {
+      console.log(`[POST /api/session] Backdoor user detected: ${userId} - creating dev session`);
+      const devSessionId = crypto.randomUUID();
+      return res.json({
+        id: devSessionId,
+        user_id: userId,
+        type: 'chat',
+        started_at: new Date().toISOString()
+      });
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(userId)) {
+      console.warn(`[POST /api/session] Invalid UUID format: ${userId} - creating dev session`);
+      const devSessionId = crypto.randomUUID();
+      return res.json({
+        id: devSessionId,
+        user_id: userId,
+        type: 'chat',
+        started_at: new Date().toISOString()
+      });
+    }
+
+    // CRITICAL: Always check for sessions with messages FIRST (including ended sessions)
+    // This ensures we continue the same conversation even after refresh
+    // Step 1: Find ALL sessions with messages for this user (prioritize active, but check all)
+    const { data: allSessionsWithMessages } = await supabase
+      .from('messages')
+      .select('session_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (allSessionsWithMessages && allSessionsWithMessages.length > 0) {
+      // Found messages - get the session details
+      const sessionIdWithMessages = allSessionsWithMessages[0].session_id;
+      const { data: sessionWithMessages } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('id', sessionIdWithMessages)
+        .eq('user_id', userId)
+        .single();
+
+      if (sessionWithMessages) {
+        // Get message count for logging
+        const { count: messageCount } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', sessionIdWithMessages);
+
+        // If session is ended, reactivate it (user is continuing conversation)
+        if (sessionWithMessages.ended_at) {
+          console.log(`[POST /api/session] 🔄 Reactivating ended session with messages: ${sessionIdWithMessages} (${messageCount || 0} messages)`);
+          await supabase
+            .from('sessions')
+            .update({ ended_at: null })
+            .eq('id', sessionIdWithMessages);
+          // Return updated session
+          return res.json({ ...sessionWithMessages, ended_at: null });
+        }
+
+        console.log(`[POST /api/session] ✅ Reusing session with messages: ${sessionIdWithMessages} (${messageCount || 0} messages)`);
+        return res.json(sessionWithMessages);
+      }
+    }
+
+    // Step 2: If no messages found, check for existing active sessions
     const { data: existingSessions } = await supabase
       .from('sessions')
       .select('*')
       .eq('user_id', userId)
       .is('ended_at', null)
       .order('started_at', { ascending: false })
-      .limit(1);
+      .limit(10);
 
     if (existingSessions && existingSessions.length > 0) {
-      return res.json(existingSessions[0]);
+      // Check if the most recent session is very recent (< 5 minutes)
+      const sessionAge = new Date().getTime() - new Date(existingSessions[0].started_at).getTime();
+      const isRecent = sessionAge < 5 * 60 * 1000; // 5 minutes
+      
+      if (isRecent) {
+        console.log(`[POST /api/session] Reusing recent empty session: ${existingSessions[0].id}`);
+        return res.json(existingSessions[0]);
+      } else {
+        // Session is old and empty, end it (will create new one below)
+        console.log(`[POST /api/session] Ending old empty session: ${existingSessions[0].id}`);
+        await supabase
+          .from('sessions')
+          .update({ ended_at: new Date().toISOString() })
+          .eq('id', existingSessions[0].id);
+      }
     }
 
     // Create new session
@@ -287,8 +378,15 @@ router.post("/api/session", async (req: Request, res: Response) => {
 router.get("/api/messages", async (req: Request, res: Response) => {
   try {
     const sessionId = req.query.sessionId as string;
+    const userId = req.query.userId as string; // Optional: for fallback
 
     if (!sessionId) {
+      return res.json([]);
+    }
+
+    // Handle backdoor user - return empty messages (they can't have saved messages in database)
+    if (userId === 'backdoor-user-id' || userId === '00000000-0000-0000-0000-000000000001') {
+      console.log(`[GET /api/messages] Backdoor user detected: ${userId} - returning empty messages`);
       return res.json([]);
     }
 
@@ -305,6 +403,77 @@ router.get("/api/messages", async (req: Request, res: Response) => {
         return res.json([]);
       }
 
+      // CRITICAL FALLBACK: If no messages found for this session, search ALL user sessions (including ended ones)
+      // This handles the case where a new session was created but messages are in an older/ended session
+      if ((!messages || messages.length === 0) && userId) {
+        console.log(`[GET /api/messages] ⚠️ No messages in session ${sessionId}, searching ALL user sessions (including ended) for messages...`);
+        
+        // Step 1: Directly query messages table to find the most recent session with messages
+        // This is more efficient than checking each session individually
+        const { data: messagesBySession } = await supabase
+          .from('messages')
+          .select('session_id')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(100); // Get recent messages to find session
+
+        if (messagesBySession && messagesBySession.length > 0) {
+          // Group by session_id and find the session with most messages
+          const sessionCounts = new Map<string, number>();
+          for (const msg of messagesBySession) {
+            const count = sessionCounts.get(msg.session_id) || 0;
+            sessionCounts.set(msg.session_id, count + 1);
+          }
+
+          // Find session with most messages
+          let bestSessionId: string | null = null;
+          let maxMessageCount = 0;
+          for (const [sessId, count] of sessionCounts.entries()) {
+            if (count > maxMessageCount) {
+              maxMessageCount = count;
+              bestSessionId = sessId;
+            }
+          }
+
+          if (bestSessionId) {
+            // Fetch ALL messages from the best session (not just recent ones)
+            console.log(`[GET /api/messages] ✅ Found session ${bestSessionId} with messages, fetching all...`);
+            const { data: allMessages, error: fetchError } = await supabase
+              .from('messages')
+              .select('*')
+              .eq('session_id', bestSessionId)
+              .order('created_at', { ascending: true });
+
+            if (fetchError) {
+              console.error('[GET /api/messages] Error fetching messages from fallback session:', fetchError);
+            } else if (allMessages && allMessages.length > 0) {
+              const transformedMessages = allMessages.map((msg: any) => ({
+                id: msg.id,
+                sessionId: msg.session_id,
+                userId: msg.user_id,
+                role: msg.role,
+                tag: msg.tag,
+                content: msg.text,
+                text: msg.text,
+                imageUrl: msg.image_url || undefined,
+                personaId: msg.persona_id || undefined,
+                createdAt: msg.created_at,
+                // Add metadata to indicate this came from a different session
+                _fallbackSession: true,
+                _originalRequestedSession: sessionId
+              }));
+              console.log(`[GET /api/messages] ✅ Returning ${transformedMessages.length} messages from fallback session ${bestSessionId} (requested: ${sessionId})`);
+              // Return messages with session info in response headers for frontend to update
+              res.setHeader('X-Session-Id', bestSessionId);
+              res.setHeader('X-Fallback-Session', 'true');
+              return res.json(transformedMessages);
+            }
+          }
+        }
+        
+        console.log(`[GET /api/messages] ⚠️ No messages found in any session for user ${userId}`);
+      }
+
       // Transform snake_case to camelCase for frontend compatibility
       const transformedMessages = (messages || []).map((msg: any) => ({
         id: msg.id,
@@ -314,6 +483,8 @@ router.get("/api/messages", async (req: Request, res: Response) => {
         tag: msg.tag,
         content: msg.text,  // Map 'text' to 'content' for frontend
         text: msg.text,     // Keep 'text' for backward compatibility
+        imageUrl: msg.image_url || undefined, // Include image URL
+        personaId: msg.persona_id || undefined, // Include persona ID if available
         createdAt: msg.created_at,
       }));
 
@@ -330,6 +501,7 @@ router.get("/api/messages", async (req: Request, res: Response) => {
       tag: msg.tag,
       content: msg.text,
       text: msg.text,
+      imageUrl: undefined, // In-memory messages don't support images yet
       createdAt: msg.created_at,
     }));
 
@@ -342,7 +514,10 @@ router.get("/api/messages", async (req: Request, res: Response) => {
 
 router.post("/api/chat", async (req: Request, res: Response) => {
   try {
-    const { content, sessionId, userId } = req.body;
+    const { content, sessionId, userId, persona_id } = req.body;
+    
+    // Log the incoming request for debugging
+    console.log(`[POST /api/chat] Request received - userId: ${userId}, sessionId: ${sessionId?.substring(0, 8)}...`);
 
     console.log("------------------------------------------");
     console.log(`[Chat] Request received. User: ${userId}`);
@@ -369,6 +544,23 @@ router.post("/api/chat", async (req: Request, res: Response) => {
       }
     }
 
+    // Determine persona_id: use from request, or user's stored persona, or default
+    const requestedPersonaId = persona_id || userPersona || 'sweet_supportive';
+    
+    // Map old persona types to new persona IDs for backward compatibility
+    const personaIdMap: Record<string, string> = {
+      'sweet_supportive': 'sweet_supportive',
+      'playful_flirty': 'flirtatious',
+      'bold_confident': 'dominant',
+      'calm_mature': 'sweet_supportive', // Map to sweet_supportive as default
+    };
+    
+    const finalPersonaId = personaIdMap[requestedPersonaId] || requestedPersonaId;
+    
+    // Load persona using persona engine
+    const persona = getPersona(finalPersonaId);
+    console.log(`[Chat] Using persona: ${persona.id} (${persona.name})`);
+
     // Validate input
     if (!content || typeof content !== "string") {
       return res.status(400).json({ error: "Message content is required" });
@@ -379,8 +571,44 @@ router.post("/api/chat", async (req: Request, res: Response) => {
     }
 
     // --- PAYWALL CHECK START (Flow 1: Check Message Quota) ---
-    let quotaCheck: any = null;
+    // Use unified premium status check (checks users, subscriptions, and payments tables)
+    let isUserPremium = false;
+    let premiumSource = 'none';
+    
     if (isSupabaseConfigured) {
+      const premiumStatus = await checkPremiumStatus(supabase, userId);
+      isUserPremium = premiumStatus.isPremium;
+      premiumSource = premiumStatus.source;
+      
+      console.log(`[Paywall] User ${userId} premium status: ${isUserPremium} (Source: ${premiumSource}, Plan: ${premiumStatus.planType || 'N/A'})`);
+      
+      // If premium check failed, log more details for debugging
+      if (!isUserPremium && premiumStatus.source === 'none') {
+        console.warn(`[Paywall] ⚠️ Premium check returned false for user ${userId}. This will trigger 402 if quota is exceeded.`);
+        // Check database directly for debugging
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('premium_user, subscription_tier, subscription_plan')
+          .eq('id', userId)
+          .single();
+        
+        if (userError) {
+          console.error(`[Paywall] Database error checking user ${userId}:`, userError);
+        } else if (userData) {
+          console.log(`[Paywall] User data from DB:`, {
+            premium_user: userData.premium_user,
+            subscription_tier: userData.subscription_tier,
+            subscription_plan: userData.subscription_plan
+          });
+        } else {
+          console.warn(`[Paywall] User ${userId} not found in database`);
+        }
+      }
+    }
+
+    let quotaCheck: any = null;
+    if (isSupabaseConfigured && !isUserPremium) {
+      // Only check quota for non-premium users
       quotaCheck = await checkMessageQuota(supabase, userId);
       
       console.log(`[Message Quota] User: ${userId}, Allowed: ${quotaCheck.allowed}, Tier: ${quotaCheck.subscriptionTier}, Count: ${quotaCheck.messageCount}/${quotaCheck.limit}`);
@@ -398,7 +626,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
           
           const personaType = userData?.persona || 'sweet_supportive';
           
-          await supabase.from('user_events').insert({
+          const { error: eventError } = await supabase.from('user_events').insert({
             user_id: userId,
             event_name: 'paywall_context',
             event_type: 'track',
@@ -411,9 +639,11 @@ router.post("/api/chat", async (req: Request, res: Response) => {
             },
             path: '/chat',
             created_at: new Date().toISOString()
-          }).catch(err => {
-            console.error('[Analytics] Error tracking paywall_context:', err);
           });
+          
+          if (eventError) {
+            console.error('[Analytics] Error tracking paywall_context:', eventError);
+          }
         }
         
         return res.status(402).json({
@@ -428,6 +658,15 @@ router.post("/api/chat", async (req: Request, res: Response) => {
           ]
         });
       }
+    } else if (isUserPremium) {
+      // Premium user - set quota check to allow
+      quotaCheck = {
+        allowed: true,
+        subscriptionTier: 'premium',
+        messageCount: 0,
+        limit: 999999
+      };
+      console.log(`[Paywall] ✅ Premium user ${userId} - bypassing quota check`);
     }
     // --- PAYWALL CHECK END ---
 
@@ -440,33 +679,77 @@ router.post("/api/chat", async (req: Request, res: Response) => {
     const limit = quotaCheck?.limit || FREE_MESSAGE_LIMIT;
     console.log(`[Chat] User message: "${content.substring(0, 50)}..." (${messageCount + 1}/${limit})`);
 
-    // Get or create session
+    // Get or create session - ALWAYS try to reuse existing session with messages first
     let finalSessionId = sessionId;
+    
     if (!finalSessionId && isSupabaseConfigured) {
-      const { data: newSession } = await supabase
+      // Try to find existing active session with messages
+      const { data: existingSessions } = await supabase
         .from('sessions')
-        .insert({
-          user_id: userId,
-          type: 'chat',
-          started_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+        .select('id')
+        .eq('user_id', userId)
+        .is('ended_at', null)
+        .order('started_at', { ascending: false })
+        .limit(5);
 
-      finalSessionId = newSession?.id || crypto.randomUUID();
+      if (existingSessions && existingSessions.length > 0) {
+        // Find session with most messages
+        for (const sess of existingSessions) {
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('session_id', sess.id);
+          
+          if (count && count > 0) {
+            console.log(`[Chat] Reusing existing session with ${count} messages: ${sess.id}`);
+            finalSessionId = sess.id;
+            break;
+          }
+        }
+      }
+
+      // If no session with messages found, create a new one
+      if (!finalSessionId) {
+        const { data: newSession } = await supabase
+          .from('sessions')
+          .insert({
+            user_id: userId,
+            type: 'chat',
+            started_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        finalSessionId = newSession?.id || crypto.randomUUID();
+        console.log(`[Chat] Created new session: ${finalSessionId}`);
+      }
     } else if (!finalSessionId) {
       finalSessionId = crypto.randomUUID();
+    } else {
+      console.log(`[Chat] Using provided session: ${finalSessionId}`);
     }
 
-    // Save user message
+    // Save user message and get the ID
+    let savedUserMessageId: string | null = null;
     if (isSupabaseConfigured) {
-      await supabase.from('messages').insert({
-        session_id: finalSessionId,
-        user_id: userId,
-        role: 'user',
-        text: content,
-        tag: 'general'
-      });
+      const { data: savedUserMessage, error: userMsgError } = await supabase
+        .from('messages')
+        .insert({
+          session_id: finalSessionId,
+          user_id: userId,
+          role: 'user',
+          text: content,
+          tag: 'general'
+        })
+        .select('id')
+        .single();
+      
+      if (userMsgError) {
+        console.error('[Chat] Error saving user message:', userMsgError);
+      } else if (savedUserMessage) {
+        savedUserMessageId = savedUserMessage.id;
+        console.log(`[Chat] User message saved with ID: ${savedUserMessageId}`);
+      }
     } else {
       // Save to in-memory store
       const userMessage: InMemoryMessage = {
@@ -484,22 +767,25 @@ router.post("/api/chat", async (req: Request, res: Response) => {
     }
 
     // Get recent messages for context
-    let recentContext = '';
+    let recentMessages: Array<{ role: 'user' | 'ai'; text: string }> = [];
     if (isSupabaseConfigured) {
-      const { data: recentMessages } = await supabase
+      const { data: messagesData } = await supabase
         .from('messages')
         .select('role, text')
         .eq('session_id', finalSessionId)
         .order('created_at', { ascending: false })
-        .limit(6);
+        .limit(10); // Get more messages for persona filtering
 
-      if (recentMessages && recentMessages.length > 0) {
-        recentContext = recentMessages
+      if (messagesData && messagesData.length > 0) {
+        recentMessages = messagesData
           .reverse()
-          .map((m) => `${m.role}: ${m.text}`)
-          .join("\n");
+          .map((m) => ({ role: m.role as 'user' | 'ai', text: m.text }));
       }
     }
+
+    // Adapt memory using persona-aware memory adapter
+    const adaptedMemory = adaptMemory(recentMessages, persona);
+    console.log(`[Chat] Memory adapted for persona ${persona.id}: ${recentMessages.length} messages filtered`);
 
     // Initialize Groq client
     let groq: Groq | null = null;
@@ -520,10 +806,81 @@ router.post("/api/chat", async (req: Request, res: Response) => {
       return res.status(500).json({ error: "AI service not configured. Please check server logs." });
     }
 
-    // Build system prompt with persona
-    const systemPrompt = buildSystemPrompt(userPersona, recentContext);
+    // Check if user requested an image
+    const wantsImage = detectImageRequest(content);
+    let selectedImage: { image_url: string; caption?: string } | null = null;
+    
+    if (wantsImage) {
+      console.log('[Chat] Image request detected, fetching random image...');
+      const image = await getRandomImage();
+      if (image) {
+        selectedImage = {
+          image_url: image.image_url,
+          caption: image.caption || undefined
+        };
+        console.log(`[Chat] Selected image: ${image.id} - ${image.image_url}`);
+      } else {
+        console.warn('[Chat] Image request detected but no images available in database');
+      }
+    }
 
-    // Call Groq API with streaming
+    // Build image context string if image is being sent
+    const imageContext = selectedImage 
+      ? `\n\nIMPORTANT: The user has requested a photo/image. You are sending them a photo with this message. The image URL is: ${selectedImage.image_url}. Naturally mention that you're sending them a photo in your response. Be warm and playful about it. Example: "Here's a photo for you! 📸" or "Yeh lo, maine tumhare liye ek photo bheji hai! 💕"`
+      : undefined;
+
+    // Run safety layer check BEFORE calling Groq
+    const safetyCheck = checkSafety(content, persona);
+    
+    if (!safetyCheck.safe && safetyCheck.overrideResponse) {
+      console.warn(`[Chat] Safety layer triggered: ${safetyCheck.reason}`);
+      logSafetyEvent(safetyCheck.reason || 'unknown', userId);
+      
+      // Return override response (non-streaming)
+      const overrideResponse = postProcess(safetyCheck.overrideResponse, persona);
+      
+      // Save override response to database
+      if (isSupabaseConfigured) {
+        await supabase.from('messages').insert({
+          session_id: finalSessionId,
+          user_id: userId,
+          role: 'ai',
+          text: overrideResponse,
+          tag: 'general',
+          image_url: selectedImage?.image_url || null,
+          persona_id: persona.id // Track which persona generated this safety override
+        });
+        await incrementMessageCount(userId);
+      }
+      
+      // Return as JSON (not streaming)
+      // IMPORTANT: Always return the sessionId that was actually used to save messages
+      console.log(`[Chat] ✅ Safety override complete. SessionId: ${finalSessionId}, Message saved successfully.`);
+      return res.json({
+        content: overrideResponse,
+        done: true,
+        sessionId: finalSessionId, // This is the sessionId where messages were saved
+        messageCount: messageCount + 1,
+        messageLimit: FREE_MESSAGE_LIMIT,
+        fullResponse: overrideResponse,
+        imageUrl: selectedImage?.image_url || undefined,
+        safetyOverride: true,
+        safetyReason: safetyCheck.reason
+      });
+    }
+
+    // Compose prompt using persona engine
+    const composedMessages = composePrompt(
+      persona,
+      adaptedMemory,
+      content,
+      RIYA_BASE_PROMPT,
+      imageContext
+    );
+
+    console.log(`[Chat] Composed ${composedMessages.length} messages for Groq API`);
+
+    // Call Groq API with streaming (using composed messages)
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -531,10 +888,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content },
-        ],
+        messages: composedMessages, // Use composed messages from persona engine
         model: "llama-3.3-70b-versatile",
         stream: true,
         temperature: 0.7,
@@ -582,7 +936,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
 
               if (chunkContent) {
                 fullResponse += chunkContent;
-                // Standardize on 'content' key for frontend
+                // Stream raw chunks for real-time feel (post-processing happens at end)
                 const responseData = `data: ${JSON.stringify({ content: chunkContent, done: false })}\n\n`;
                 res.write(responseData);
               }
@@ -593,22 +947,37 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         }
       }
 
-      // Save AI response
-      if (fullResponse && fullResponse.trim().length > 0) {
+      // Post-process response using persona engine
+      const processedResponse = postProcess(fullResponse, persona);
+      console.log(`[Chat] Response post-processed for persona ${persona.id}`);
+
+      // Save AI response and get the ID
+      let savedAiMessageId: string | null = null;
+      if (processedResponse && processedResponse.trim().length > 0) {
         if (isSupabaseConfigured) {
           try {
-            const { error: insertError } = await supabase.from('messages').insert({
+            // Save message with persona_id (column now exists after migration)
+            const messageData: any = {
               session_id: finalSessionId,
               user_id: userId,
               role: 'ai',
-              text: fullResponse,
-              tag: 'general'
-            });
+              text: processedResponse, // Save post-processed response
+              tag: 'general',
+              image_url: selectedImage?.image_url || null,
+              persona_id: persona.id // Track which persona generated this message
+            };
+            
+            const { data: savedAiMessage, error: insertError } = await supabase
+              .from('messages')
+              .insert(messageData)
+              .select('id')
+              .single();
 
             if (insertError) {
               console.error('[Chat] Error saving AI message:', insertError);
-            } else {
-              console.log('[Chat] AI message saved to Supabase successfully');
+            } else if (savedAiMessage) {
+              savedAiMessageId = savedAiMessage.id;
+              console.log(`[Chat] AI message saved to Supabase successfully with ID: ${savedAiMessageId}, persona_id: ${persona.id}`);
             }
 
             // Increment message count
@@ -623,7 +992,7 @@ router.post("/api/chat", async (req: Request, res: Response) => {
             session_id: finalSessionId,
             user_id: userId,
             role: 'ai',
-            text: fullResponse,
+            text: processedResponse, // Save post-processed response
             tag: 'general',
             created_at: new Date().toISOString()
           };
@@ -634,15 +1003,21 @@ router.post("/api/chat", async (req: Request, res: Response) => {
         }
       }
 
-      // Send completion signal with the full response so frontend can display it
+      // Send completion signal with the processed response
+      // IMPORTANT: Always return the sessionId that was actually used to save messages
+      // CRITICAL: Include saved message IDs so frontend can update cache with real IDs
       const doneData = `data: ${JSON.stringify({
         content: "",
         done: true,
-        sessionId: finalSessionId,
+        sessionId: finalSessionId, // This is the sessionId where messages were saved
         messageCount: messageCount + 1,
         messageLimit: FREE_MESSAGE_LIMIT,
-        fullResponse: fullResponse // Include full response in done signal
+        fullResponse: processedResponse, // Send post-processed response
+        imageUrl: selectedImage?.image_url || undefined, // Include image URL if available
+        userMessageId: savedUserMessageId || undefined, // Real database ID for user message
+        aiMessageId: savedAiMessageId || undefined // Real database ID for AI message
       })}\n\n`;
+      console.log(`[Chat] ✅ Stream complete. SessionId: ${finalSessionId}, Messages saved successfully.`);
       res.write(doneData);
       res.end();
 

@@ -122,6 +122,7 @@ export const messages = pgTable("messages", {
   role: messageRoleEnum("role").notNull(),
   tag: messageTagEnum("tag").notNull().default("general"),
   text: text("text").notNull(),
+  imageUrl: text("image_url"), // URL to image if message includes an image
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

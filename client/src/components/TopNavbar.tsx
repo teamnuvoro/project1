@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { PersonaSelector } from "@/components/PersonaSelector";
 
 const actionItems = [
   { title: "Voice Call", url: "/call", icon: Phone },
@@ -94,9 +95,16 @@ export function TopNavbar() {
             {/* Name and Status */}
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-white font-semibold text-base leading-tight truncate">
-                  Riya
-                </span>
+                {isChatPage ? (
+                  <PersonaSelector
+                    currentPersona={user?.persona}
+                    compact={true}
+                  />
+                ) : (
+                  <span className="text-white font-semibold text-base leading-tight truncate">
+                    Riya
+                  </span>
+                )}
                 {isChatPage && (
                   isPremium ? (
                     <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold tracking-wide shadow-sm flex-shrink-0">

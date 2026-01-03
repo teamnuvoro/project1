@@ -43,8 +43,8 @@ const EVENT_TRANSLATIONS: Record<string, string> = {
   message_sent: "User sent a chat message.",
   chat_opened: "User opened the chat interface.",
   tip_clicked: "User engaged with a suggested conversation starter.",
-  free_message_warning_shown: "User saw the 18-msg warning.",
-  message_limit_hit: "PAYWALL TRIGGERED (20 Msgs).",
+  free_message_warning_shown: "User saw the 998-msg warning.",
+  message_limit_hit: "PAYWALL TRIGGERED (1000 Msgs).",
   paywall_triggered: "User hit their free message limit and saw the upgrade popup. Key trigger for conversion funnel.",
   
   // Payments & Conversion

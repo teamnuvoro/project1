@@ -206,7 +206,7 @@ router.post('/api/payment-webhook', async (req: Request, res: Response) => {
 
       if (verifiedStatus !== 'captured' && verifiedStatus !== 'authorized') {
         console.log('[Webhook] ⚠️ Razorpay API verification failed. Status:', verifiedStatus);
-        return res.status(200).json({ success: false, message: 'Payment verification failed' });
+      return res.status(200).json({ success: false, message: 'Payment verification failed' });
       }
     } catch (verifyError) {
       console.error('[Webhook] Error verifying payment with Razorpay:', verifyError);

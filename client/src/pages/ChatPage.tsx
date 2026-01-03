@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { analytics } from "@/lib/analytics";
 import { useLocation } from "wouter";
 import { FeedbackModal } from "@/components/FeedbackModal";
+import { PersonaSelector } from "@/components/PersonaSelector";
 import {
   trackChatOpened,
   trackMessageSent,
@@ -66,34 +67,111 @@ export default function ChatPage() {
   const isMobile = useIsMobile();
   const abortControllerRef = useRef<AbortController | null>(null);
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string | undefined>(user?.persona);
+  const lastCacheUpdateRef = useRef<number>(0); // Track when we last updated cache manually
 
-  const { data: session, isLoading: isSessionLoading } = useQuery<Session>({
+  const { data: session, isLoading: isSessionLoading, refetch: refetchSession } = useQuery<Session>({
     queryKey: ["session", user?.id],
     queryFn: async () => {
       const res = await apiRequest("POST", "/api/session", { userId: user?.id });
-      return res.json();
+      const sessionData = await res.json();
+      console.log(`[ChatPage] Session fetched: ${sessionData.id}`);
+      return sessionData;
     },
-    enabled: !!user?.id // Only fetch session when user is available
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes - prevents unnecessary refetches
+    refetchOnMount: true,
+    refetchOnWindowFocus: false, // Don't refetch on focus - prevents race conditions
+    // CRITICAL: Keep previous data during refetch to prevent query key changes
+    placeholderData: (previousData) => previousData
   });
 
-  const { data: messages = [], isLoading: isMessagesLoading } = useQuery<Message[]>({
-    queryKey: ["messages", session?.id],
-    enabled: !!session?.id,
+  const { data: messages = [], isLoading: isMessagesLoading, refetch: refetchMessages } = useQuery<Message[]>({
+    queryKey: ["messages", session?.id, user?.id],
+    enabled: !!(session?.id && user?.id),
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/messages?sessionId=${session?.id}`);
+      if (!session?.id || !user?.id) {
+        console.log('[ChatPage] ⚠️ Cannot fetch messages: missing session or user ID');
+        return [];
+      }
+      
+      // Get current cache to prevent overwriting with stale data
+      const currentCache = queryClient.getQueryData<Message[]>(['messages', session.id, user.id]);
+      const cacheMessageCount = currentCache?.length || 0;
+      
+      const res = await apiRequest("GET", `/api/messages?sessionId=${session.id}&userId=${user.id}`);
+      
+      // CRITICAL: Check response headers BEFORE parsing JSON (headers are only readable once)
+      // Check if backend returned messages from a different session (fallback scenario)
+      let actualSessionId = session.id;
+      const fallbackSessionId = res.headers.get('X-Session-Id');
+      const isFallback = res.headers.get('X-Fallback-Session') === 'true';
+      
+      if (isFallback && fallbackSessionId && fallbackSessionId !== session.id) {
+        console.log(`[ChatPage] 🔄 Backend used fallback session: ${fallbackSessionId} (requested: ${session.id})`);
+        actualSessionId = fallbackSessionId;
+      }
+      
       const rawMessages = await res.json();
+      console.log(`[ChatPage] ✅ Fetched ${rawMessages.length} messages for session: ${session.id} (cache had ${cacheMessageCount})`);
+      
+      // Also check message session IDs as backup (if headers weren't set)
+      if (actualSessionId === session.id && rawMessages.length > 0) {
+        const firstMsgSessionId = rawMessages[0].sessionId || rawMessages[0].session_id;
+        if (firstMsgSessionId && firstMsgSessionId !== session.id) {
+          console.log(`[ChatPage] ⚠️ Messages found in different session: ${firstMsgSessionId} (current: ${session.id})`);
+          actualSessionId = firstMsgSessionId;
+        }
+      }
+      
+      // If session changed, update the session cache to keep UI in sync
+      if (actualSessionId !== session.id && session) {
+        console.log(`[ChatPage] 🔄 Updating session cache from ${session.id} to ${actualSessionId}`);
+        // Update session query cache with the correct session ID
+        queryClient.setQueryData(['session', user.id], { 
+          ...session, 
+          id: actualSessionId 
+        });
+        // Note: Don't invalidate messages query here - we already have the messages
+        // Invalidating would cause a refetch and potential flicker
+      }
+      
       // Map backend format to frontend Message interface
-      return rawMessages.map((msg: any) => ({
+      const mappedMessages = rawMessages.map((msg: any) => ({
         id: msg.id,
         sessionId: msg.session_id || msg.sessionId,
         content: msg.text || msg.content, // Fallback for various backend formats
         role: msg.role === 'ai' ? 'assistant' : msg.role, // normalize 'ai' -> 'assistant'
         createdAt: new Date(msg.created_at || msg.createdAt),
-        tag: msg.tag
+        tag: msg.tag,
+        imageUrl: msg.imageUrl || msg.image_url || undefined, // Include image URL
+        personaId: msg.personaId || msg.persona_id || undefined // Include persona ID
       }));
+      
+      // SAFEGUARD: If we recently updated cache manually (< 10 seconds ago) and server has fewer messages,
+      // prefer the cache to prevent disappearing messages
+      const timeSinceCacheUpdate = Date.now() - lastCacheUpdateRef.current;
+      if (timeSinceCacheUpdate < 10000 && cacheMessageCount > mappedMessages.length && currentCache) {
+        console.log(`[ChatPage] ⚠️ Server returned fewer messages (${mappedMessages.length}) than cache (${cacheMessageCount}). Using cache to prevent message loss.`);
+        // Merge: keep cache messages, add any new ones from server
+        const cacheIds = new Set(currentCache.map(m => m.id));
+        const newFromServer = mappedMessages.filter(m => !cacheIds.has(m.id));
+        return [...currentCache, ...newFromServer].sort((a, b) => {
+          const timeA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+          const timeB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+          return timeA - timeB;
+        });
+      }
+      
+      return mappedMessages;
     },
     refetchInterval: false,
-    staleTime: 30000,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes - prevents aggressive refetching
+    refetchOnMount: true, // CRITICAL: Always fetch on mount/refresh to ensure messages load after page refresh
+    refetchOnWindowFocus: false, // Disable refetch on window focus to prevent unwanted refetches
+    refetchOnReconnect: true, // Refetch on reconnect to sync after network issues
+    // CRITICAL: Keep previous data while refetching to prevent messages from disappearing
+    placeholderData: (previousData) => previousData || []
   });
 
   // Track chat opened and session started (after session and messages are defined)
@@ -109,14 +187,23 @@ export default function ChatPage() {
       const serverMessageContents = new Set(
         messages.map(m => ((m as any).content || m.text || '').trim().toLowerCase())
       );
+      const serverMessageIds = new Set(
+        messages.map(m => m.id)
+      );
 
       setOptimisticMessages(prev => {
         const filtered = prev.filter(optMsg => {
-          // If the message is very recent (< 5 seconds), keep it to avoid flickering
-          const isRecent = new Date().getTime() - optMsg.createdAt.getTime() < 5000;
+          // If the message is very recent (< 15 seconds), keep it to avoid flickering
+          // Increased from 5 to 15 seconds to handle network latency
+          const isRecent = new Date().getTime() - optMsg.createdAt.getTime() < 15000;
           if (isRecent) return true;
 
-          // Otherwise, remove it if it exists in the server list
+          // Check if message exists by ID first (more reliable)
+          if (serverMessageIds.has(optMsg.id)) {
+            return false; // Remove if ID matches
+          }
+
+          // Otherwise, remove it if it exists in the server list by content
           return !serverMessageContents.has(optMsg.content.trim().toLowerCase());
         });
         
@@ -226,11 +313,19 @@ export default function ChatPage() {
   const isLoading = isSessionLoading;
   const isDev = import.meta.env.MODE === 'development';
 
-  // Use the HIGHER of backend or local count to be safe
+  // CRITICAL: Daily message count for limit checking
+  // NEVER use messages.length - that's total conversation length, not daily count
   const localCount = getLocalUsage();
-  const backendCount = userUsage?.messageCount || 0;
-  // If backend is failing (0), we trust local. If backend has data, we trust it.
-  const currentCount = Math.max(localCount, backendCount, messages.length);
+  
+  // Validate backendCount is a valid number
+  const rawBackendCount = userUsage?.messageCount;
+  const backendCount = (typeof rawBackendCount === 'number' && !isNaN(rawBackendCount) && rawBackendCount >= 0) 
+    ? rawBackendCount 
+    : 0;
+  
+  // Use backend count as primary source (from /api/user/usage API)
+  // Fall back to local count only if backend is unavailable (0 or invalid)
+  const currentCount = backendCount > 0 ? backendCount : localCount;
 
   // Check premium status - prioritize user object (from auth) as it's the source of truth
   // Only use userUsage if user object is not available
@@ -252,15 +347,16 @@ export default function ChatPage() {
     console.log("DEBUG: ChatPage Mount");
     console.log("DEBUG: Local Count (Storage):", localCount);
     console.log("DEBUG: Backend Count (Api):", backendCount);
-    console.log("DEBUG: Current Count (Max):", currentCount);
+    console.log("DEBUG: Current Count (Daily):", currentCount, "(NOT total conversation length)");
+    console.log("DEBUG: Total Messages in Session:", messages.length, "(for reference only, NOT used for limits)");
     console.log("DEBUG: Is Premium:", isPremium);
     console.log("------------------------------------------");
-  }, [localCount, backendCount, currentCount, isPremium]);
+  }, [localCount, backendCount, currentCount, isPremium, messages.length]);
 
   // STRICT LIMIT CHECK - Only block if NOT premium AND limit reached
   // For premium users, always allow (unlimited)
-  // Free users get 20 messages
-  const FREE_MESSAGE_LIMIT = 20;
+  // Free users get 1000 messages
+  const FREE_MESSAGE_LIMIT = 1000;
   const isLimitReached = !isPremium && currentCount >= FREE_MESSAGE_LIMIT;
   
   // Debug limit check
@@ -327,7 +423,12 @@ export default function ChatPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ content, sessionId: session.id, userId: user?.id }),
+          body: JSON.stringify({ 
+            content, 
+            sessionId: session.id, 
+            userId: user?.id,
+            persona_id: selectedPersonaId || user?.persona // Send selected persona or user's default
+          }),
         });
 
         if (response.status === 402) {
@@ -360,6 +461,10 @@ export default function ChatPage() {
 
         const decoder = new TextDecoder();
         let aiResponseText = "";
+        let imageUrl: string | undefined = undefined;
+        let realUserMessageId: string | undefined = undefined;
+        let realAiMessageId: string | undefined = undefined;
+        let finalSessionId = session.id;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -384,7 +489,28 @@ export default function ChatPage() {
                 }
 
                 if (data.done) {
-                  // Message complete
+                  // Capture imageUrl from done signal if present
+                  if (data.imageUrl) {
+                    imageUrl = data.imageUrl;
+                  }
+                  
+                  // CRITICAL: Capture real message IDs from backend
+                  if (data.userMessageId) {
+                    realUserMessageId = data.userMessageId;
+                    console.log(`[ChatPage] ✅ Received real user message ID from backend: ${realUserMessageId}`);
+                  }
+                  if (data.aiMessageId) {
+                    realAiMessageId = data.aiMessageId;
+                    console.log(`[ChatPage] ✅ Received real AI message ID from backend: ${realAiMessageId}`);
+                  }
+                  
+                  // If backend returned a different sessionId, update our session
+                  if (data.sessionId && data.sessionId !== session.id) {
+                    console.log(`[ChatPage] 🔄 Backend returned different sessionId: ${data.sessionId} (was: ${session.id})`);
+                    finalSessionId = data.sessionId;
+                    // Update session in cache
+                    queryClient.setQueryData(['session', user?.id], { ...session, id: data.sessionId });
+                  }
                 }
               } catch (e) {
                 // Ignore parse errors for partial chunks
@@ -393,44 +519,87 @@ export default function ChatPage() {
           }
         }
 
-        // Message complete - Update Cache Manually to prevent flicker
+        // CRITICAL: Use REAL message IDs from backend instead of temporary IDs
+        // This ensures messages persist correctly after page refresh
         const userMessage: Message = {
-          id: optimisticId, // Use the ID we already have
+          id: realUserMessageId || optimisticId, // Use real ID from backend, fallback to optimistic
           content: content,
           role: 'user',
-          sessionId: session.id,
+          sessionId: finalSessionId, // Use final session ID (may have changed)
           createdAt: new Date(),
           tag: 'general'
         };
 
         const aiMessage: Message = {
-          id: generateTempId(),
+          id: realAiMessageId || generateTempId(), // Use real ID from backend, fallback to temp
           content: aiResponseText,
           role: 'assistant',
-          sessionId: session.id,
+          sessionId: finalSessionId, // Use final session ID (may have changed)
           createdAt: new Date(),
-          tag: 'general'
+          tag: 'general',
+          imageUrl: imageUrl // Include image URL if present
         };
 
-        // Manually update the cache with BOTH messages
-        queryClient.setQueryData(['messages', session.id], (old: Message[] | undefined) => {
+        // Remove optimistic message now that we have real IDs
+        removeOptimisticMessage(optimisticId);
+        
+        // Update cache with REAL IDs from database
+        // This ensures messages persist after refresh because IDs match database
+        lastCacheUpdateRef.current = Date.now();
+        
+        queryClient.setQueryData(['messages', finalSessionId, user?.id], (old: Message[] | undefined) => {
           const current = old || [];
-          // Filter out any potential duplicates by ID or content/role match
-          const exists = current.some(m => m.id === userMessage.id);
-          const newMessages = exists ? current : [...current, userMessage];
-          return [...newMessages, aiMessage];
+          
+          // Create a map of existing messages by ID for fast lookup
+          const existingById = new Map(current.map(m => [m.id, m]));
+          
+          let newMessages = [...current]; // Start with all existing messages
+          
+          // Replace temporary IDs with real IDs if we have them
+          // First, remove any messages with temporary IDs that match our content
+          newMessages = newMessages.filter(m => {
+            // Keep messages that don't match our new messages
+            if (m.id === optimisticId && m.role === 'user' && m.content === content) {
+              return false; // Remove old optimistic message
+            }
+            // Remove any temporary AI messages with same content (will be replaced with real ID)
+            if (m.role === 'assistant' && 
+                m.content.trim().toLowerCase() === aiResponseText.trim().toLowerCase() &&
+                m.id.startsWith('temp-')) {
+              return false; // Remove temporary AI message
+            }
+            return true;
+          });
+          
+          // Add user message with real ID
+          if (!existingById.has(userMessage.id)) {
+            newMessages.push(userMessage);
+            console.log(`[ChatPage] ✅ Added user message to cache with real ID: ${userMessage.id}`);
+          }
+          
+          // Add AI message with real ID
+          if (!existingById.has(aiMessage.id)) {
+            newMessages.push(aiMessage);
+            console.log(`[ChatPage] ✅ Added AI message to cache with real ID: ${aiMessage.id}`);
+          }
+          
+          // Sort by timestamp to ensure proper chronological order
+          return newMessages.sort((a, b) => {
+            const timeA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+            const timeB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+            return timeA - timeB;
+          });
         });
 
-        // NOW clear streaming so we don't duplicate
+        // Clear streaming
         setStreamingMessage("");
 
-        // OPTIONAL: Invalidate strictly for message count/usage, but NOT messages list immediately
-        // to avoid "pop-in/pop-out" effect due to replication lag.
+        // Invalidate usage query for count updates
         queryClient.invalidateQueries({ queryKey: ["/api/user/usage"] });
 
-        // DISABLE REFETCH: We trust our manual cache update to keep the UI stable.
-        // This prevents the 'disappearing messages' bug if the DB insert failed or is lagging.
-        // queryClient.invalidateQueries({ queryKey: ["messages", session.id] });
+        // DO NOT refetch messages immediately - we already updated the cache with real IDs
+        // Refetching would cause messages to disappear temporarily
+        // The cache update above is sufficient - messages will be fetched on next page load
 
         return { success: true, reply: aiResponseText };
 
@@ -471,11 +640,17 @@ export default function ChatPage() {
 
   const handleSendMessage = (content: string) => {
     // 1. Strict Check BEFORE updating
+    // Use backend count if available, otherwise local count
+    // NEVER use messages.length - that's total conversation length, not daily count
     const currentLocal = getLocalUsage();
-    const effectiveCount = Math.max(currentLocal, messages.length);
+    const rawBackendCount = userUsage?.messageCount;
+    const validatedBackendCount = (typeof rawBackendCount === 'number' && !isNaN(rawBackendCount) && rawBackendCount >= 0) 
+      ? rawBackendCount 
+      : 0;
+    const effectiveCount = validatedBackendCount > 0 ? validatedBackendCount : currentLocal;
     const isPremiumUser = userUsage?.premiumUser || user?.premium_user || false;
 
-    if (!isPremiumUser && effectiveCount >= 5) {
+    if (!isPremiumUser && effectiveCount >= FREE_MESSAGE_LIMIT) {
       console.log("Paywall Hit (Pre-check):", effectiveCount);
       setPaywallOpen(true);
       return;
@@ -494,12 +669,12 @@ export default function ChatPage() {
       voiceMode: voiceModeEnabled
     });
 
-    // 4. Double check AFTER increment (for the 20th message edge case)
-    if (!isPremiumUser && newCount >= 5) {
+    // 4. Double check AFTER increment (for the 1000th message edge case)
+    if (!isPremiumUser && newCount >= FREE_MESSAGE_LIMIT) {
       console.log("Paywall Hit (Post-increment):", newCount);
-      // We allow THIS message to send (as the 20th), but open modal for next.
+      // We allow THIS message to send (as the 1000th), but open modal for next.
       // Or block immediately if you prefer strictness.
-      // Let's let the 20th go through, but trigger state for UI lock.
+      // Let's let the 1000th go through, but trigger state for UI lock.
       setPaywallOpen(true);
     }
 
@@ -509,15 +684,59 @@ export default function ChatPage() {
     });
   };
 
-  const serverMessageIds = new Set(messages.map(m => ((m as any).content || m.text || '').trim().toLowerCase()));
-  const filteredOptimistic = optimisticMessages.filter(
-    optMsg => !serverMessageIds.has(optMsg.content.trim().toLowerCase())
-  );
+  // Better filtering: check by ID first, then by content
+  // Create sets for fast lookup
+  const serverMessageContents = new Set(messages.map(m => ((m as any).content || m.text || '').trim().toLowerCase()));
+  const serverMessageIds = new Set(messages.map(m => m.id));
+  
+  // Filter out optimistic messages that are already in the server messages
+  const filteredOptimistic = optimisticMessages.filter(optMsg => {
+    // Remove if ID matches (most reliable check)
+    if (serverMessageIds.has(optMsg.id)) {
+      return false;
+    }
+    
+    // Remove if content matches (fallback check) - but only if message is not very recent
+    // This prevents removing optimistic messages that are still being processed
+    const isRecent = new Date().getTime() - optMsg.createdAt.getTime() < 5000;
+    if (isRecent) {
+      // Keep recent optimistic messages even if content matches (might be duplicate from cache update)
+      return true;
+    }
+    
+    return !serverMessageContents.has(optMsg.content.trim().toLowerCase());
+  });
 
-  const displayMessages: (Message | OptimisticMessage)[] = [
-    ...messages,
-    ...filteredOptimistic,
-  ];
+  // Combine messages and remove duplicates by ID
+  // This handles cases where we might have both temp IDs and real IDs for the same message
+  const messageMap = new Map<string, Message | OptimisticMessage>();
+  
+  // First, add all server messages (these have priority - real IDs)
+  messages.forEach(msg => {
+    messageMap.set(msg.id, msg);
+  });
+  
+  // Then add optimistic messages that aren't duplicates
+  filteredOptimistic.forEach(optMsg => {
+    // Only add if we don't already have a message with this ID
+    if (!messageMap.has(optMsg.id)) {
+      // Also check if we have a message with matching content (might have different ID)
+      const hasMatchingContent = Array.from(messageMap.values()).some(m => 
+        m.role === optMsg.role &&
+        ((m as any).content || m.text || '').trim().toLowerCase() === optMsg.content.trim().toLowerCase()
+      );
+      if (!hasMatchingContent) {
+        messageMap.set(optMsg.id, optMsg);
+      }
+    }
+  });
+
+  // Convert map to array and sort by timestamp
+  const displayMessages: (Message | OptimisticMessage)[] = Array.from(messageMap.values()).sort((a, b) => {
+    const timeA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+    const timeB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+    return timeA - timeB;
+  });
 
   if (streamingMessage && session) {
     displayMessages.push({
@@ -556,6 +775,17 @@ export default function ChatPage() {
         isOpen={showExitModal}
         onClose={closeExitModal}
       />
+
+      {/* Persona Selector - Floating button (optional, can be removed if using navbar version) */}
+      <div className="absolute top-20 right-4 z-30 hidden md:block">
+        <PersonaSelector
+          currentPersona={selectedPersonaId || user?.persona}
+          onPersonaChange={(personaId) => {
+            setSelectedPersonaId(personaId);
+            refetchUser();
+          }}
+        />
+      </div>
 
       {/* Scrollable Messages Area - Takes full height minus input */}
       <div className="flex-1 min-h-0 w-full overflow-hidden">
