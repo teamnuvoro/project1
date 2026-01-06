@@ -36,8 +36,21 @@
 
   <!-- End Meta Pixel Code -->
 
-  <script type="module" crossorigin src="/assets/index-Cx9GkGHa.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-Bcf4HK0O.css">
+  <!-- Cashfree Payment SDK - Load early to prevent PaymentJSInterface errors -->
+  <script>
+    // Prevent PaymentJSInterface error by creating a safe placeholder
+    (function() {
+      if (typeof window !== 'undefined' && !window.PaymentJSInterface) {
+        window.PaymentJSInterface = {
+          onError: function() { console.warn('[Cashfree] PaymentJSInterface not yet initialized'); },
+          onSuccess: function() { console.warn('[Cashfree] PaymentJSInterface not yet initialized'); }
+        };
+      }
+    })();
+  </script>
+
+  <script type="module" crossorigin src="/assets/index-CG5nTZeA.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Bmii8sv4.css">
 </head>
 
 <body>

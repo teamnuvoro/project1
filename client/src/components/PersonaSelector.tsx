@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -8,11 +8,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 
 // Map old persona types to new persona IDs
+// Also includes new IDs as identity mappings for direct support
 const PERSONA_MAP: Record<string, string> = {
+  // Old types -> new IDs
   'sweet_supportive': 'sweet_supportive',
   'playful_flirty': 'flirtatious',
   'bold_confident': 'dominant',
-  'calm_mature': 'sweet_supportive', // Map to sweet_supportive
+  'calm_mature': 'sweet_supportive',
+  // New IDs (identity mappings - already correct format)
+  'flirtatious': 'flirtatious',
+  'playful': 'playful',
+  'dominant': 'dominant',
 };
 
 // Available personas with new system
@@ -59,13 +65,52 @@ interface PersonaSelectorProps {
 
 export function PersonaSelector({ currentPersona, onPersonaChange, compact = false }: PersonaSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, refetchUser } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Local state to track selected persona for immediate UI update
+  const [localSelectedPersona, setLocalSelectedPersona] = useState<string | null>(null);
+
   // Map current persona to new system
-  const mappedPersonaId = currentPersona ? (PERSONA_MAP[currentPersona] || currentPersona) : 'sweet_supportive';
+  // Use localSelectedPersona if set (for immediate UI update), otherwise use currentPersona prop
+  const effectivePersona = localSelectedPersona || currentPersona;
+  const mappedPersonaId = effectivePersona ? (PERSONA_MAP[effectivePersona] || effectivePersona) : 'sweet_supportive';
   const currentPersonaData = PERSONAS.find(p => p.id === mappedPersonaId) || PERSONAS[0];
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('[PersonaSelector] Render - effectivePersona:', effectivePersona, 'mappedPersonaId:', mappedPersonaId, 'currentPersonaData:', currentPersonaData.name, 'localSelectedPersona:', localSelectedPersona);
+  }, [effectivePersona, mappedPersonaId, currentPersonaData.name, localSelectedPersona]);
+
+  // Update local state when currentPersona prop changes (from user refetch)
+  // Clear local state when prop updates to match, so we use the authoritative prop value
+  useEffect(() => {
+    if (currentPersona) {
+      const mapped = PERSONA_MAP[currentPersona] || currentPersona;
+      // If the mapped prop value matches our local selection, clear local state
+      // This happens after refetch confirms the change
+      if (localSelectedPersona && mapped === localSelectedPersona) {
+        console.log('[PersonaSelector] Prop updated to match local selection, clearing local state');
+        setLocalSelectedPersona(null);
+      }
+    } else if (user?.id && !currentPersona) {
+      // If no persona from prop but user is loaded, try loading from localStorage
+      try {
+        const key = `persona_${user.id}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const mapped = PERSONA_MAP[parsed] || parsed;
+          console.log('[PersonaSelector] Loaded persona from localStorage:', mapped);
+          // Don't set localSelectedPersona here - let the prop update handle it
+          // But we can use it as a fallback for effectivePersona
+        }
+      } catch (e) {
+        console.error('[PersonaSelector] Error loading persona from localStorage:', e);
+      }
+    }
+  }, [currentPersona, localSelectedPersona, user?.id]);
 
   const personaMutation = useMutation({
     mutationFn: async (personaId: string) => {
@@ -76,11 +121,24 @@ export function PersonaSelector({ currentPersona, onPersonaChange, compact = fal
       });
       return personaId;
     },
-    onSuccess: (personaId) => {
+    onSuccess: async (personaId) => {
       toast({
         title: "Persona Changed! 🎭",
         description: `Switched to ${PERSONAS.find(p => p.id === personaId)?.name || personaId}`,
       });
+      
+      // Save to localStorage as backup
+      if (user?.id) {
+        try {
+          localStorage.setItem(`persona_${user.id}`, JSON.stringify(personaId));
+          console.log('[PersonaSelector] Saved persona to localStorage:', personaId);
+        } catch (e) {
+          console.error('[PersonaSelector] Error saving persona to localStorage:', e);
+        }
+      }
+      
+      // Refetch user to get updated persona immediately
+      await refetchUser();
       queryClient.invalidateQueries({ queryKey: ["user", user?.id] });
       if (onPersonaChange) {
         onPersonaChange(personaId);
@@ -97,18 +155,26 @@ export function PersonaSelector({ currentPersona, onPersonaChange, compact = fal
   });
 
   const handleSelectPersona = (personaId: string) => {
+    console.log('[PersonaSelector] handleSelectPersona called with:', personaId, 'current mappedPersonaId:', mappedPersonaId);
     if (personaId === mappedPersonaId) {
+      console.log('[PersonaSelector] Persona already selected, closing dropdown');
       setIsOpen(false);
       return;
     }
+    // Immediately update local state for instant UI feedback
+    console.log('[PersonaSelector] Setting local persona to:', personaId, 'for immediate UI update');
+    setLocalSelectedPersona(personaId);
+    // Then trigger the mutation
+    console.log('[PersonaSelector] Triggering persona mutation');
     personaMutation.mutate(personaId);
   };
 
   const Icon = currentPersonaData.icon;
 
   if (compact) {
+    // Force re-render by using key based on persona
     return (
-      <div className="relative">
+      <div className="relative" key={`persona-selector-${mappedPersonaId}`}>
         <Button
           variant="ghost"
           size="sm"
@@ -161,7 +227,7 @@ export function PersonaSelector({ currentPersona, onPersonaChange, compact = fal
   }
 
   return (
-    <div className="relative">
+    <div className="relative" key={`persona-selector-full-${mappedPersonaId}`}>
       <Button
         variant="outline"
         onClick={() => setIsOpen(!isOpen)}

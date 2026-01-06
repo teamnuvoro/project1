@@ -14,9 +14,10 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { FeedbackModal } from "@/components/FeedbackModal";
+import { PersonaSelector } from "@/components/PersonaSelector";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
 const actionItems = [
@@ -26,7 +27,8 @@ const actionItems = [
 
 export function TopNavbar() {
   const [location, setLocation] = useLocation();
-  const { logout, user } = useAuth();
+  const { logout, user, refetchUser } = useAuth();
+  const queryClient = useQueryClient();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const isChatPage = location === '/chat';
@@ -104,6 +106,30 @@ export function TopNavbar() {
               Active now
             </span>
           </div>
+
+          {/* Persona Selector Dropdown */}
+          <div className="ml-2">
+            <PersonaSelector 
+              currentPersona={user?.persona} 
+              compact={true}
+              onPersonaChange={async (personaId) => {
+                console.log('[TopNavbar] Persona changed to:', personaId);
+                // Immediately dispatch event to notify ChatPage
+                const personaChangeEvent = new CustomEvent('personaChanged', { 
+                  detail: { personaId } 
+                });
+                window.dispatchEvent(personaChangeEvent);
+                console.log('[TopNavbar] Dispatched personaChanged event with personaId:', personaId);
+                
+                // Refetch user to get updated persona immediately
+                await refetchUser();
+                console.log('[TopNavbar] User refetched after persona change');
+                // Invalidate chat messages to refresh with new persona
+                queryClient.invalidateQueries({ queryKey: ["/api/chat"] });
+                queryClient.invalidateQueries({ queryKey: ["messages", user?.id] });
+              }}
+            />
+          </div>
         </div>
 
         {/* Right: Credits and Actions */}
@@ -154,17 +180,6 @@ export function TopNavbar() {
                     transition={{ duration: 0.15, ease: "easeOut" }}
                     className="absolute right-0 top-full mt-3 w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl z-50 border border-white/40 overflow-hidden py-2 ring-1 ring-black/5"
                   >
-                    {/* Relationship Profile */}
-                    <Link href="/summary">
-                      <button className="w-full px-4 py-3 text-left text-gray-700 hover:bg-pink-50 transition-colors flex items-center gap-3 group">
-                        <div className="text-pink-500 p-2 bg-pink-100 rounded-full group-hover:bg-pink-200 transition-colors">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                        </div>
-                        <span className="font-medium text-sm">Relationship Profile</span>
-                      </button>
-                    </Link>
-
-                    <div className="h-px bg-gray-100 my-1 mx-4"></div>
 
 
 

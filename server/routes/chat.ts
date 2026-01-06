@@ -547,15 +547,25 @@ router.post("/api/chat", async (req: Request, res: Response) => {
     // Determine persona_id: use from request, or user's stored persona, or default
     const requestedPersonaId = persona_id || userPersona || 'sweet_supportive';
     
+    console.log(`[Chat] Persona selection - Request persona_id: ${persona_id}, User persona: ${userPersona}, Final requested: ${requestedPersonaId}`);
+    
     // Map old persona types to new persona IDs for backward compatibility
+    // Also handle new persona IDs directly
     const personaIdMap: Record<string, string> = {
+      // Old types -> new IDs
       'sweet_supportive': 'sweet_supportive',
       'playful_flirty': 'flirtatious',
       'bold_confident': 'dominant',
-      'calm_mature': 'sweet_supportive', // Map to sweet_supportive as default
+      'calm_mature': 'sweet_supportive',
+      // New IDs (direct mapping - already correct)
+      'flirtatious': 'flirtatious',
+      'playful': 'playful',
+      'dominant': 'dominant',
     };
     
     const finalPersonaId = personaIdMap[requestedPersonaId] || requestedPersonaId;
+    
+    console.log(`[Chat] Persona mapping - Requested: ${requestedPersonaId}, Mapped to: ${finalPersonaId}`);
     
     // Load persona using persona engine
     const persona = getPersona(finalPersonaId);

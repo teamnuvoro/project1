@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, X, Sparkles, TrendingUp } from 'lucide-react';
-import { useLocation } from 'wouter';
+import { Heart, X } from 'lucide-react';
 
 interface ExitIntentModalProps {
   isOpen: boolean;
@@ -9,13 +8,6 @@ interface ExitIntentModalProps {
 }
 
 export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
-  const [, setLocation] = useLocation();
-
-  const handleViewSummary = () => {
-    onClose();
-    setLocation('/summary');
-  };
-
   const handleStay = () => {
     onClose();
   };
@@ -107,7 +99,7 @@ export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
                   transition={{ delay: 0.2 }}
                   className="text-2xl font-bold text-gray-900 mb-3"
                 >
-                  Wait! Before You Go... 💜
+                  Please Don't Leave! 💜
                 </motion.h2>
 
                 {/* Message */}
@@ -117,79 +109,27 @@ export function ExitIntentModal({ isOpen, onClose }: ExitIntentModalProps) {
                   transition={{ delay: 0.3 }}
                   className="text-gray-600 leading-relaxed mb-6"
                 >
-                  I've been learning so much about you!
-                  <span className="block mt-2 font-semibold text-purple-600">
-                    Want to see your Relationship Profile before you leave?
-                  </span>
+                  I'm here for you! Let's continue our conversation.
                 </motion.p>
-
-                {/* Features List */}
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-5 mb-6 text-left border border-purple-100"
-                >
-                  <div className="flex items-start gap-3 mb-3">
-                    <Sparkles className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm">Your Personality Insights</p>
-                      <p className="text-xs text-gray-600">Discover what makes you unique</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 mb-3">
-                    <TrendingUp className="w-5 h-5 text-pink-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm">Relationship Strengths</p>
-                      <p className="text-xs text-gray-600">See your growth and progress</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Heart className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm">Personalized Advice</p>
-                      <p className="text-xs text-gray-600">Next steps for your journey</p>
-                    </div>
-                  </div>
-                </motion.div>
 
                 {/* Actions */}
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
+                  transition={{ delay: 0.4 }}
                   className="space-y-3"
                 >
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleViewSummary();
+                      handleStay();
                     }}
                     className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer z-50 relative"
                   >
                     <Heart className="w-5 h-5" />
-                    View My Relationship Profile
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStay();
-                    }}
-                    className="w-full py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all cursor-pointer z-50 relative"
-                  >
-                    Continue Chatting
+                    Stay & Continue Chatting
                   </button>
                 </motion.div>
-
-                {/* Subtitle */}
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6 }}
-                  className="text-xs text-gray-500 mt-4"
-                >
-                  ✨ Just take 2 minutes to see what I've learned about you!
-                </motion.p>
               </div>
             </motion.div>
           </div>

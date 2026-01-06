@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { analytics } from "@/lib/analytics";
 import { useLocation, Link } from "wouter";
 import { FeedbackModal } from "@/components/FeedbackModal";
+import { Phone } from "lucide-react";
 import {
   trackChatOpened,
   trackMessageSent,
@@ -66,8 +67,49 @@ export default function ChatPage() {
   const isMobile = useIsMobile();
   const abortControllerRef = useRef<AbortController | null>(null);
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
-  const [selectedPersonaId, setSelectedPersonaId] = useState<string | undefined>(user?.persona);
+  // Map old persona types to new IDs for frontend use
+  const mapPersonaToNewId = (persona: string | undefined): string | undefined => {
+    if (!persona) return undefined;
+    const personaMap: Record<string, string> = {
+      'sweet_supportive': 'sweet_supportive',
+      'playful_flirty': 'flirtatious',
+      'flirtatious': 'flirtatious',
+      'playful': 'playful',
+      'bold_confident': 'dominant',
+      'dominant': 'dominant',
+      'calm_mature': 'sweet_supportive',
+    };
+    return personaMap[persona] || persona;
+  };
+
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string | undefined>(
+    mapPersonaToNewId(user?.persona)
+  );
   const lastCacheUpdateRef = useRef<number>(0); // Track when we last updated cache manually
+
+  // LocalStorage backup key for messages
+  const getMessagesStorageKey = () => `messages_${user?.id || 'anonymous'}`;
+  
+  // Load messages from localStorage on mount as initial data
+  const getInitialMessages = useCallback((): Message[] => {
+    if (!user?.id) return [];
+    try {
+      const key = `messages_${user.id}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        console.log(`[ChatPage] 📦 Loaded ${parsed.length} messages from localStorage`);
+        // Convert date strings back to Date objects
+        return parsed.map((msg: any) => ({
+          ...msg,
+          createdAt: new Date(msg.createdAt)
+        }));
+      }
+    } catch (e) {
+      console.error('[ChatPage] Error loading messages from localStorage:', e);
+    }
+    return [];
+  }, [user?.id]);
 
   const { data: session, isLoading: isSessionLoading, refetch: refetchSession } = useQuery<Session>({
     queryKey: ["session", user?.id],
@@ -87,19 +129,22 @@ export default function ChatPage() {
 
   const { data: messages = [], isLoading: isMessagesLoading, refetch: refetchMessages } = useQuery<Message[]>({
     queryKey: ["messages", user?.id], // Stable key - only depends on user ID, not session ID
-    enabled: !!user?.id, // Only depend on user ID, not session (session handled internally)
+    enabled: !!user?.id && !!session?.id, // Wait for both user AND session to be available before fetching
+    initialData: () => getInitialMessages(), // Load from localStorage on mount
     queryFn: async () => {
       if (!user?.id) {
         console.log('[ChatPage] ⚠️ Cannot fetch messages: missing user ID');
         return [];
       }
       
-      // Get session from state or cache (handled internally, doesn't affect query key)
+      // Session should be available since enabled check passed, but double-check
       const currentSession = session || queryClient.getQueryData<Session>(['session', user.id]);
       if (!currentSession?.id) {
         console.log('[ChatPage] ⚠️ Cannot fetch messages: session not available yet');
         return [];
       }
+      
+      console.log(`[ChatPage] 🔍 Fetching messages for session: ${currentSession.id}, user: ${user.id}`);
       
       // Get current cache to prevent overwriting with stale data (use stable key)
       const currentCache = queryClient.getQueryData<Message[]>(['messages', user.id]);
@@ -190,7 +235,22 @@ export default function ChatPage() {
           const timeB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
           return timeA - timeB;
         });
+        
+        // Save to localStorage as backup
+        try {
+          localStorage.setItem(getMessagesStorageKey(), JSON.stringify(merged));
+        } catch (e) {
+          console.error('[ChatPage] Error saving messages to localStorage:', e);
+        }
+        
         return merged;
+      }
+      
+      // Save to localStorage as backup
+      try {
+        localStorage.setItem(getMessagesStorageKey(), JSON.stringify(mappedMessages));
+      } catch (e) {
+        console.error('[ChatPage] Error saving messages to localStorage:', e);
       }
       
       return mappedMessages;
@@ -202,15 +262,100 @@ export default function ChatPage() {
     refetchOnReconnect: true, // Refetch on reconnect to sync after network issues
     // CRITICAL: Keep previous data while refetching to prevent messages from disappearing
     // This ensures messages stay visible even if query refetches
-    placeholderData: (previousData) => previousData || []
+    placeholderData: (previousData) => {
+      // If we have previous data, use it
+      if (previousData && previousData.length > 0) {
+        return previousData;
+      }
+      // Otherwise, try to load from localStorage as fallback
+      if (user?.id) {
+        try {
+          const key = `messages_${user.id}`;
+          const stored = localStorage.getItem(key);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            console.log(`[ChatPage] 📦 Using ${parsed.length} messages from localStorage as placeholder`);
+            return parsed.map((msg: any) => ({
+              ...msg,
+              createdAt: new Date(msg.createdAt)
+            }));
+          }
+        } catch (e) {
+          console.error('[ChatPage] Error loading messages from localStorage in placeholderData:', e);
+        }
+      }
+      return [];
+    }
   });
 
-  // Sync selectedPersonaId with user persona (when persona changes from navbar)
+  // Listen for immediate persona changes from navbar (before user refetch)
   useEffect(() => {
-    if (user?.persona && user.persona !== selectedPersonaId) {
-      setSelectedPersonaId(user.persona);
+    const handlePersonaChange = (event: CustomEvent) => {
+      const { personaId } = event.detail;
+      console.log('[ChatPage] Received personaChanged event with personaId:', personaId);
+      if (personaId && personaId !== selectedPersonaId) {
+        console.log('[ChatPage] Immediately updating selectedPersonaId from', selectedPersonaId, 'to', personaId);
+        setSelectedPersonaId(personaId);
+        
+        // Save to localStorage as backup
+        if (user?.id) {
+          try {
+            localStorage.setItem(`persona_${user.id}`, JSON.stringify(personaId));
+            console.log('[ChatPage] Saved persona to localStorage:', personaId);
+          } catch (e) {
+            console.error('[ChatPage] Error saving persona to localStorage:', e);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('personaChanged', handlePersonaChange as EventListener);
+    return () => {
+      window.removeEventListener('personaChanged', handlePersonaChange as EventListener);
+    };
+  }, [selectedPersonaId, user?.id]);
+
+  // Sync selectedPersonaId with user persona (when persona changes from navbar or on load)
+  useEffect(() => {
+    if (user?.persona) {
+      // Map old persona type to new ID
+      const mappedPersona = mapPersonaToNewId(user.persona);
+      console.log('[ChatPage] User persona from DB:', user.persona, 'mapped to:', mappedPersona);
+      
+      // Always update if we have a persona from the database (even if it's the same)
+      // This ensures the persona is set correctly on page load/refresh
+      if (mappedPersona) {
+        if (mappedPersona !== selectedPersonaId) {
+          console.log('[ChatPage] Updating selectedPersonaId from', selectedPersonaId, 'to', mappedPersona);
+          setSelectedPersonaId(mappedPersona);
+          // Also save to localStorage to keep it in sync
+          try {
+            localStorage.setItem(`persona_${user.id}`, JSON.stringify(mappedPersona));
+          } catch (e) {
+            console.error('[ChatPage] Error saving persona to localStorage:', e);
+          }
+        } else {
+          console.log('[ChatPage] selectedPersonaId already matches:', mappedPersona);
+        }
+      }
+    } else if (user?.id && !selectedPersonaId) {
+      // If user is loaded but persona is missing, try loading from localStorage as fallback
+      try {
+        const key = `persona_${user.id}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const mappedPersona = mapPersonaToNewId(parsed);
+          if (mappedPersona) {
+            console.log('[ChatPage] Loaded persona from localStorage:', mappedPersona);
+            setSelectedPersonaId(mappedPersona);
+          }
+        }
+      } catch (e) {
+        console.error('[ChatPage] Error loading persona from localStorage:', e);
+      }
     }
-  }, [user?.persona]);
+  }, [user?.persona, user?.id, selectedPersonaId]); // Include selectedPersonaId to avoid unnecessary updates
 
   // Track chat opened and session started (after session and messages are defined)
   useEffect(() => {
@@ -474,6 +619,12 @@ export default function ChatPage() {
       try {
         // Chat endpoint uses streaming, so we need to use fetch directly with API_BASE
         const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+        
+        // Ensure we use the new persona ID format (map old types to new)
+        const personaToSend = selectedPersonaId || mapPersonaToNewId(user?.persona) || 'sweet_supportive';
+        
+        console.log('[ChatPage] Sending message with persona_id:', personaToSend, '(mapped from:', selectedPersonaId || user?.persona, ')');
+        
         const response = await fetch(`${API_BASE}/api/chat`, {
           method: "POST",
           headers: {
@@ -483,7 +634,7 @@ export default function ChatPage() {
             content, 
             sessionId: session.id, 
             userId: user?.id,
-            persona_id: selectedPersonaId || user?.persona // Send selected persona or user's default
+            persona_id: personaToSend // Always send new ID format
           }),
         });
 
@@ -659,6 +810,14 @@ export default function ChatPage() {
           });
           
           console.log(`[ChatPage] 📊 Cache updated: ${current.length} → ${sorted.length} messages`);
+          
+          // Save to localStorage as backup
+          try {
+            localStorage.setItem(getMessagesStorageKey(), JSON.stringify(sorted));
+          } catch (e) {
+            console.error('[ChatPage] Error saving messages to localStorage:', e);
+          }
+          
           return sorted;
         });
 

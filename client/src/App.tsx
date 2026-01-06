@@ -10,7 +10,6 @@ import { initAmplitude } from "@/utils/amplitudeTracking";
 import { BackdoorActivator } from "@/components/BackdoorActivator";
 import ChatPage from "@/pages/ChatPage";
 import CallPage from "@/pages/CallPage";
-import SummaryPage from "@/pages/SummaryPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import { ProtectedLayout } from "@/components/layouts/ProtectedLayout";
 import PaymentCallback from "@/pages/PaymentCallback";
@@ -70,7 +69,7 @@ function Router() {
   const [location] = useLocation();
 
   // Check if route needs top navbar layout
-  const navbarRoutes = ['/chat', '/call', '/summary', '/analytics', '/settings', '/memories', '/history', '/payment/callback', '/admin/analytics', '/admin/analytics/journey'];
+  const navbarRoutes = ['/chat', '/call', '/analytics', '/settings', '/memories', '/history', '/payment/callback', '/admin/analytics', '/admin/analytics/journey'];
   const needsNavbar = navbarRoutes.some(route => location.startsWith(route));
 
   const content = (
@@ -114,9 +113,6 @@ function Router() {
       </Route>
       <Route path="/call">
         {() => <ProtectedLayout><CallPage /></ProtectedLayout>}
-      </Route>
-      <Route path="/summary">
-        {() => <ProtectedLayout><SummaryPage /></ProtectedLayout>}
       </Route>
       <Route path="/analytics">
         {() => <ProtectedLayout><AnalyticsPage /></ProtectedLayout>}

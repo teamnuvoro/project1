@@ -24,7 +24,6 @@ import { useAuth } from "@/contexts/AuthContext";
 const mainItems = [
   { title: "Chat", url: "/chat", icon: MessageSquare },
   { title: "Voice Call", url: "/call", icon: PhoneCall },
-  { title: "Insights", url: "/summary", icon: TrendingUp },
 ];
 
 const secondaryItems = [
