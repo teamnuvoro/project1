@@ -50,6 +50,13 @@ export default defineConfig({
       strict: true,
       deny: [".env", ".env.*", "*.{crt,pem,key}"],
     },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
     headers: {
       // Allow unsafe-eval in development for Vite HMR and dev tools
       // This is safe in development but should be removed in production

@@ -41,10 +41,15 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
+  
+  // GET and HEAD requests cannot have a body
+  const methodsWithoutBody = ['GET', 'HEAD'];
+  const hasBody = data !== undefined && data !== null && !methodsWithoutBody.includes(method.toUpperCase());
+  
   const res = await fetch(fullUrl, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
+    headers: hasBody ? { "Content-Type": "application/json" } : {},
+    body: hasBody ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
 

@@ -91,7 +91,7 @@ app.use(supabaseApiRoutes);
 // Chat routes (Groq AI)
 app.use(chatRoutes);
 
-// Call routes (Vapi voice calls)
+// Call routes (voice calls - Sarvam)
 app.use(callRoutes);
 
 // Summary routes (relationship insights)

@@ -20,3 +20,4 @@ SELECT '✅ Image URL support added to messages table!' as status;
 
 
 
+

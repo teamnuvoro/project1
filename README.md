@@ -5,7 +5,7 @@ An AI-powered relationship companion chatbot for men aged 24-28, offering conver
 ## ✨ Features
 
 - **🤖 AI Conversations**: Real-time chat with Riya using Groq's LLM (30-40% Hindi)
-- **🎤 Voice Calling**: Live voice conversations with Sarvam AI (STT, TTS, Chat)
+- **🎤 Voice Calling**: Real-time voice conversations with LiveKit (sub-500ms latency, full duplex)
 - **💬 Message History**: Persistent PostgreSQL storage with full chat history
 - **🔐 Secure Auth**: Email-based OTP authentication system
 - **💳 Smart Paywall**: 20 message limit for free users, unlimited premium

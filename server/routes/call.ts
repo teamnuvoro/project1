@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase, isSupabaseConfigured } from '../supabase';
 import { VapiClient } from '@vapi-ai/server-sdk';
-import { startSarvamCall, getConversationMemory } from '../services/sarvam';
+import { startSarvamCall, endSarvamCall, getConversationMemory, RIYA_SYSTEM_PROMPT } from '../services/sarvam';
 import { startBolnaCall, endBolnaCall } from '../services/bolna';
 
 const router = Router();
@@ -24,23 +24,7 @@ interface CallSession {
 
 router.get('/api/call/config', async (req: Request, res: Response) => {
   try {
-    // Check for Bolna API key first (new integration)
-    const bolnaApiKey = process.env.BOLNA_API_KEY;
-    const bolnaAgentId = process.env.BOLNA_AGENT_ID;
-    
-    if (bolnaApiKey && bolnaAgentId) {
-      console.log('[Call Config] Using Bolna AI for voice calls');
-      return res.json({
-        ready: true,
-        provider: 'bolna',
-        apiKey: bolnaApiKey, // Frontend will use this
-        agentId: bolnaAgentId,
-        // Note: In production, don't expose full API key to frontend
-        // Consider using a public key or token instead
-      });
-    }
-
-    // Check for Sarvam API key (Version 2)
+    // Check for Sarvam API key first (primary voice provider)
     const sarvamApiKey = process.env.SARVAM_API_KEY;
     
     if (sarvamApiKey) {
@@ -49,6 +33,23 @@ router.get('/api/call/config', async (req: Request, res: Response) => {
         ready: true,
         provider: 'sarvam',
         apiKey: sarvamApiKey, // Frontend will use this
+        // Note: In production, don't expose full API key to frontend
+        // Consider using a public key or token instead
+      });
+    }
+
+    // Check for Bolna API key (telephony only)
+    // NOTE: Bolna is designed for telephony (phone calls), not browser-based WebSocket calls
+    const bolnaApiKey = process.env.BOLNA_API_KEY;
+    const bolnaAgentId = process.env.BOLNA_AGENT_ID;
+    
+    if (bolnaApiKey && bolnaAgentId) {
+      console.log('[Call Config] Using Bolna AI for voice calls (telephony only)');
+      return res.json({
+        ready: true,
+        provider: 'bolna',
+        apiKey: bolnaApiKey, // Frontend will use this
+        agentId: bolnaAgentId,
         // Note: In production, don't expose full API key to frontend
         // Consider using a public key or token instead
       });
@@ -70,7 +71,7 @@ router.get('/api/call/config', async (req: Request, res: Response) => {
     if (!publicKey) {
       return res.status(503).json({
         ready: false,
-        error: 'Voice calling not configured. Set BOLNA_API_KEY, SARVAM_API_KEY, or VAPI_PUBLIC_KEY',
+        error: 'Voice calling not configured. Set SARVAM_API_KEY, BOLNA_API_KEY, or VAPI_PUBLIC_KEY',
         provider: null
       });
     }
@@ -89,7 +90,8 @@ router.get('/api/call/config', async (req: Request, res: Response) => {
 router.post('/api/call/start', async (req: Request, res: Response) => {
   try {
     const userId = (req as any).session?.userId || DEV_USER_ID;
-    const { vapiCallId, sarvamCallId, bolnaCallId, metadata, provider } = req.body;
+    const { vapiCallId, sarvamCallId, bolnaCallId, metadata: requestMetadata, provider } = req.body;
+    let metadata = requestMetadata || {};
 
     if (!isSupabaseConfigured) {
       return res.json({
@@ -124,23 +126,30 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
       });
     }
 
-    // Determine provider priority: Bolna > Sarvam > Vapi
+    // Determine provider priority: Vapi for browser calls, Bolna for phone calls only
+    // Note: Bolna is designed for telephony (phone calls), not browser-based WebSocket calls
     let finalProvider = provider || 'vapi';
     let finalCallId = vapiCallId || sarvamCallId || bolnaCallId;
 
+    // Check if phone number is provided (for Bolna telephony calls)
+    const phoneNumber = (req.body as any).phoneNumber;
+    
     // Check environment to determine default provider
+    // Sarvam is primary for browser calls, Bolna for telephony only
     if (!provider) {
-      if (process.env.BOLNA_API_KEY && process.env.BOLNA_AGENT_ID) {
-        finalProvider = 'bolna';
-      } else if (process.env.SARVAM_API_KEY) {
+      if (process.env.SARVAM_API_KEY) {
+        // Sarvam for browser calls (primary)
         finalProvider = 'sarvam';
+      } else if (phoneNumber && process.env.BOLNA_API_KEY && process.env.BOLNA_AGENT_ID) {
+        // Bolna for phone calls only
+        finalProvider = 'bolna';
       } else {
         finalProvider = 'vapi';
       }
     }
 
-    // If using Bolna and no call ID provided, start a new Bolna call
-    if (finalProvider === 'bolna' && !finalCallId) {
+    // If using Bolna and no call ID provided, start a new Bolna call (phone calls only)
+    if (finalProvider === 'bolna' && !finalCallId && phoneNumber) {
       try {
         // Get conversation memory for context
         const conversationHistory = await getConversationMemory(userId, 10);
@@ -159,6 +168,7 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
           agentId: process.env.BOLNA_AGENT_ID,
           conversationHistory,
           systemPrompt,
+          phoneNumber: phoneNumber, // Required for Bolna telephony calls
           voiceSettings: {
             voiceId: process.env.BOLNA_VOICE_ID,
             language: 'hi-IN',
@@ -192,19 +202,31 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
           .eq('id', userId)
           .single();
 
-        const systemPrompt = `You are Riya, a warm and caring AI companion. You speak in a mix of Hindi and English (Hinglish) naturally. You're supportive, understanding, and always there to listen. Keep responses conversational and empathetic.`;
-
         const sarvamResponse = await startSarvamCall({
           userId,
           conversationHistory,
-          systemPrompt,
+          systemPrompt: RIYA_SYSTEM_PROMPT,
           voiceSettings: {
             language: 'hi-IN',
+            speaker: 'meera',
+            model: 'bulbul:v2',
           }
         });
 
         finalCallId = sarvamResponse.callId;
         console.log('[Call Start] Sarvam call initiated:', finalCallId);
+        console.log('[Call Start] Sarvam STT WebSocket URL:', sarvamResponse.sttWebSocketUrl);
+        console.log('[Call Start] Sarvam TTS WebSocket URL:', sarvamResponse.ttsWebSocketUrl);
+        
+        // Store WebSocket URLs in metadata for frontend
+        if (sarvamResponse.sttWebSocketUrl || sarvamResponse.ttsWebSocketUrl) {
+          metadata = { 
+            ...metadata, 
+            sttWebSocketUrl: sarvamResponse.sttWebSocketUrl,
+            ttsWebSocketUrl: sarvamResponse.ttsWebSocketUrl,
+            websocketUrl: sarvamResponse.sttWebSocketUrl, // Legacy support
+          };
+        }
       } catch (sarvamError: any) {
         console.error('[Call Start] Sarvam call failed:', sarvamError);
         // Fallback to Vapi if Sarvam fails
@@ -254,9 +276,17 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
 
     const responseData: any = {
       ...session,
+      sarvam_call_id: finalProvider === 'sarvam' ? finalCallId : session.sarvam_call_id,
       bolna_call_id: finalProvider === 'bolna' ? finalCallId : session.bolna_call_id,
       remainingSeconds: isPremium ? Infinity : Math.max(0, FREE_LIMIT - totalUsed)
     };
+    
+    // Include WebSocket URLs if available (for Sarvam WebSocket calls)
+    if (finalProvider === 'sarvam' && metadata) {
+      if (metadata.sttWebSocketUrl) responseData.stt_websocket_url = metadata.sttWebSocketUrl;
+      if (metadata.ttsWebSocketUrl) responseData.tts_websocket_url = metadata.ttsWebSocketUrl;
+      if (metadata.websocketUrl) responseData.websocket_url = metadata.websocketUrl; // Legacy support
+    }
     
     // Include websocket URL if available (for Bolna WebSocket calls)
     if (finalProvider === 'bolna' && metadata?.websocketUrl) {
@@ -276,7 +306,14 @@ router.post('/api/call/end', async (req: Request, res: Response) => {
     const { sessionId, vapiCallId, sarvamCallId, bolnaCallId, durationSeconds, transcript, endReason, provider } = req.body;
 
     // End the call on the provider side if needed
-    if (provider === 'bolna' && bolnaCallId) {
+    if (provider === 'sarvam' && sarvamCallId) {
+      try {
+        await endSarvamCall(sarvamCallId);
+        console.log('[Call End] Sarvam call ended:', sarvamCallId);
+      } catch (error: any) {
+        console.error('[Call End] Failed to end Sarvam call:', error);
+      }
+    } else if (provider === 'bolna' && bolnaCallId) {
       try {
         await endBolnaCall(bolnaCallId);
         console.log('[Call End] Bolna call ended:', bolnaCallId);

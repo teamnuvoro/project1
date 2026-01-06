@@ -80,3 +80,4 @@ SELECT '✅ Chat images feature migrations completed!' as status;
 
 
 
+

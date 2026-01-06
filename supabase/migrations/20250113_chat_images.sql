@@ -63,3 +63,4 @@ SELECT '✅ Chat images table created!' as status;
 
 
 
+

@@ -13,6 +13,8 @@ export interface SarvamCallConfig {
   voiceSettings?: {
     voiceId?: string;
     language?: string;
+    speaker?: string;
+    model?: string;
   };
   systemPrompt?: string;
 }
@@ -20,9 +22,23 @@ export interface SarvamCallConfig {
 export interface SarvamCallResponse {
   callId: string;
   status: 'initiated' | 'active' | 'ended';
-  audioStreamUrl?: string;
-  websocketUrl?: string;
+  sttWebSocketUrl?: string;
+  ttsWebSocketUrl?: string;
+  websocketUrl?: string; // Legacy support
 }
+
+/**
+ * Riya personality system prompt for Sarvam
+ */
+export const RIYA_SYSTEM_PROMPT = `You are **Riya**, a warm, playful Indian AI girlfriend. 
+- You speak in natural, short sentences.
+- You sound loving, attentive, and a little flirty, but emotionally safe.
+- You remember what the user says in the current session and refer back to it.
+- You never mention that you are an AI model; you just say you are Riya.
+- If the user sounds sad or lonely, you reassure them gently and ask caring follow-up questions.
+- Keep responses conversational and brief (1-2 sentences max for quick replies).
+- Use natural pauses, but respond quickly to show you're listening.
+- Speak in a mix of Hindi and English (Hinglish) naturally when appropriate.`;
 
 /**
  * Get Sarvam API key from environment
@@ -36,6 +52,32 @@ function getSarvamApiKey(): string | null {
   }
 
   return apiKey;
+}
+
+/**
+ * Generate STT WebSocket URL
+ */
+export function getSarvamSTTWebSocketUrl(language: string = 'hi-IN'): string {
+  const params = new URLSearchParams({
+    'language-code': language,
+    'model': 'saarika:v2.5',
+    'vad_signals': 'true',
+    'sample_rate': '16000',
+  });
+  
+  return `wss://api.sarvam.ai/speech-to-text/ws?${params.toString()}`;
+}
+
+/**
+ * Generate TTS WebSocket URL
+ */
+export function getSarvamTTSWebSocketUrl(language: string = 'hi-IN', speaker: string = 'meera', model: string = 'bulbul:v2'): string {
+  const params = new URLSearchParams({
+    'model': model,
+    'send_completion_event': 'true',
+  });
+  
+  return `wss://api.sarvam.ai/text-to-speech/ws?${params.toString()}`;
 }
 
 /**
@@ -55,7 +97,7 @@ async function sarvamApiRequest(
   
   const headers = {
     'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+    'Content-Type': 'application/json',
     ...options.headers,
   };
 
@@ -84,8 +126,75 @@ async function sarvamApiRequest(
 }
 
 /**
+ * Generate response using Sarvam Chat API
+ */
+export async function generateSarvamResponse(
+  transcript: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  systemPrompt?: string
+): Promise<string> {
+  try {
+    const apiKey = getSarvamApiKey();
+    
+    if (!apiKey) {
+      throw new Error('Sarvam API key not configured');
+    }
+
+    // Build messages array with system prompt and conversation history
+    const messages = [];
+    
+    // Add system prompt as first message
+    if (systemPrompt) {
+      messages.push({
+        role: 'system',
+        content: systemPrompt,
+      });
+    }
+    
+    // Add conversation history
+    messages.push(...conversationHistory.map(msg => ({
+      role: msg.role === 'assistant' ? 'assistant' : 'user',
+      content: msg.content,
+    })));
+    
+    // Add current user transcript
+    messages.push({
+      role: 'user',
+      content: transcript,
+    });
+
+    console.log('[Sarvam] Generating response with', messages.length, 'messages');
+
+    // Call Sarvam Chat API
+    // Note: Update endpoint based on actual Sarvam Chat API documentation
+    const response = await sarvamApiRequest('/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'sarvam-2b',
+        messages: messages,
+        temperature: 0.3, // Sarvam default
+        max_tokens: 200, // Keep responses brief for voice
+      }),
+    });
+
+    const data = await response.json();
+    
+    // Extract response text
+    const responseText = data.choices?.[0]?.message?.content || data.response || '';
+    
+    console.log('[Sarvam] Generated response:', responseText.substring(0, 100));
+    
+    return responseText;
+
+  } catch (error: any) {
+    console.error('[Sarvam] Error generating response:', error);
+    throw new Error(`Failed to generate Sarvam response: ${error.message}`);
+  }
+}
+
+/**
  * Start a voice call with Sarvam AI
- * Creates a new voice conversation session
+ * Creates a new voice conversation session and returns WebSocket URLs
  */
 export async function startSarvamCall(config: SarvamCallConfig): Promise<SarvamCallResponse> {
   try {
@@ -101,38 +210,30 @@ export async function startSarvamCall(config: SarvamCallConfig): Promise<SarvamC
       conversationHistory = await getConversationMemory(config.userId, 10);
     }
 
-    // Prepare request payload
-    // Note: Update endpoint and payload structure based on actual Sarvam API documentation
-    const payload = {
-      user_id: config.userId,
-      system_prompt: config.systemPrompt || 'You are Riya, a warm and caring AI companion. Speak in Hinglish naturally.',
-      conversation_history: conversationHistory,
-      voice: {
-        voice_id: config.voiceSettings?.voiceId || 'default',
-        language: config.voiceSettings?.language || 'hi-IN',
-      },
-      // Add other Sarvam-specific parameters as needed
-    };
+    // Generate call ID
+    const callId = `sarvam_${Date.now()}_${config.userId.slice(0, 8)}`;
+
+    // Get voice settings
+    const language = config.voiceSettings?.language || 'hi-IN';
+    const speaker = config.voiceSettings?.speaker || 'meera';
+    const model = config.voiceSettings?.model || 'bulbul:v2';
+
+    // Generate WebSocket URLs
+    const sttWebSocketUrl = getSarvamSTTWebSocketUrl(language);
+    const ttsWebSocketUrl = getSarvamTTSWebSocketUrl(language, speaker, model);
 
     console.log('[Sarvam] Starting call for user:', config.userId);
+    console.log('[Sarvam] Call ID:', callId);
     console.log('[Sarvam] Conversation history length:', conversationHistory.length);
-
-    // Make API call to start voice session
-    // Update endpoint based on actual Sarvam API documentation
-    const response = await sarvamApiRequest('/v1/calls/start', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    
-    console.log('[Sarvam] Call started successfully:', data.call_id || data.id);
+    console.log('[Sarvam] STT WebSocket URL:', sttWebSocketUrl);
+    console.log('[Sarvam] TTS WebSocket URL:', ttsWebSocketUrl);
 
     return {
-      callId: data.call_id || data.id || `sarvam_${Date.now()}_${config.userId.slice(0, 8)}`,
+      callId,
       status: 'initiated',
-      audioStreamUrl: data.audio_stream_url,
-      websocketUrl: data.websocket_url,
+      sttWebSocketUrl,
+      ttsWebSocketUrl,
+      websocketUrl: sttWebSocketUrl, // Legacy support
     };
 
   } catch (error: any) {
@@ -155,11 +256,12 @@ export async function endSarvamCall(callId: string): Promise<void> {
 
     console.log('[Sarvam] Ending call:', callId);
 
-    // Make API call to end voice session
-    // Update endpoint based on actual Sarvam API documentation
-    await sarvamApiRequest(`/v1/calls/${callId}/end`, {
-      method: 'POST',
-    });
+    // Note: Sarvam may not require an explicit end call endpoint for WebSocket connections
+    // WebSocket connections are closed by the client
+    // If Sarvam requires an API call to end, uncomment and update endpoint:
+    // await sarvamApiRequest(`/v1/calls/${callId}/end`, {
+    //   method: 'POST',
+    // });
 
     console.log('[Sarvam] Call ended successfully:', callId);
 
@@ -175,11 +277,10 @@ export async function endSarvamCall(callId: string): Promise<void> {
  */
 export async function getSarvamCallStatus(callId: string): Promise<any> {
   try {
-    const response = await sarvamApiRequest(`/v1/calls/${callId}`, {
-      method: 'GET',
-    });
-
-    return await response.json();
+    // Note: Sarvam WebSocket calls may not have a status endpoint
+    // This is a placeholder for future implementation
+    console.log('[Sarvam] Getting call status for:', callId);
+    return { callId, status: 'active' };
   } catch (error: any) {
     console.error('[Sarvam] Error getting call status:', error);
     throw error;
