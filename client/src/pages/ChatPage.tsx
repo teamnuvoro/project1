@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { analytics } from "@/lib/analytics";
 import { useLocation, Link } from "wouter";
 import { FeedbackModal } from "@/components/FeedbackModal";
+import { Phone } from "lucide-react";
 import {
   trackChatOpened,
   trackMessageSent,
@@ -853,7 +854,7 @@ export default function ChatPage() {
 }
 
   return (
-    <div className="flex flex-col h-screen w-full bg-white overflow-hidden relative">
+    <div className="flex flex-col h-screen w-full bg-white overflow-hidden relative safe-area-inset">
       {/* Exit Intent Modal */}
       <ExitIntentModal
         isOpen={showExitModal}
@@ -861,7 +862,12 @@ export default function ChatPage() {
       />
 
       {/* Scrollable Messages Area - Takes full height minus navbar and input */}
-      <div className="flex-1 min-h-0 w-full overflow-hidden pt-[60px]">
+      <div 
+        className="flex-1 min-h-0 w-full overflow-hidden pb-safe"
+        style={{
+          paddingTop: 'calc(60px + var(--safe-area-inset-top, 0px))',
+        }}
+      >
         <ChatMessages
           messages={displayMessages as Message[]}
           isLoading={isMessagesLoading}
@@ -871,7 +877,7 @@ export default function ChatPage() {
       </div>
 
       {/* Fixed Input at Bottom */}
-      <div className="flex-shrink-0 w-full z-20 bg-white border-t border-gray-100">
+      <div className="flex-shrink-0 w-full z-20 bg-white border-t border-gray-100 pb-safe">
         <ChatInput
           onSendMessage={handleSendMessage}
           isLoading={sendMessageMutation.isPending || isTyping}
@@ -882,17 +888,19 @@ export default function ChatPage() {
         />
       </div>
 
-      {/* Floating Call Button - Right side, above input bar */}
-      <Link href="/call">
-        <button
-          className="fixed right-4 bottom-28 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-300 z-30"
-          style={{ backgroundColor: '#FF69B4' }}
-          title="Call Riya"
-          data-testid="button-floating-call"
-        >
-          <Phone className="w-6 h-6 text-white" />
-        </button>
-      </Link>
+      {/* Floating Call Button - Right side, above input bar - Hidden on mobile to avoid clutter */}
+      {!isMobile && (
+        <Link href="/call">
+          <button
+            className="fixed right-4 bottom-28 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-300 z-30"
+            style={{ backgroundColor: '#FF69B4' }}
+            title="Call Riya"
+            data-testid="button-floating-call"
+          >
+            <Phone className="w-6 h-6 text-white" />
+          </button>
+        </Link>
+      )}
 
       <PaywallSheet open={paywallOpen} onOpenChange={setPaywallOpen} />
 

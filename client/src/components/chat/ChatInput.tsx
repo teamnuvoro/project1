@@ -127,14 +127,15 @@ export function ChatInput({
         onStartRecording={startRecording}
       />
 
-      <div className="bg-white border-t border-gray-100 px-4 py-3 w-full">
+      <div className="bg-white border-t border-gray-100 px-3 sm:px-4 py-2.5 sm:py-3 w-full">
         {/* Input Row - Paperclip, Input, Send Button */}
         <div className="flex items-center gap-2 w-full">
-          {/* Paperclip icon on left */}
+          {/* Paperclip icon on left - Larger touch target on mobile */}
           <button
-            className="p-2 text-gray-500 hover:text-gray-700 transition-colors flex-shrink-0"
+            className="p-2.5 sm:p-2 text-gray-500 hover:text-gray-700 active:text-gray-900 transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
             title="Attach file"
             data-testid="button-attach"
+            aria-label="Attach file"
           >
             <Paperclip className="w-5 h-5" />
           </button>
@@ -148,12 +149,13 @@ export function ChatInput({
               onKeyPress={(e) => e.key === "Enter" && handleSend()}
               placeholder={disabled ? "Limit Reached - Upgrade to Chat" : (isLoading ? "Sending..." : "Message Riya...")}
               disabled={isLoading || disabled}
-              className={`w-full h-12 px-4 rounded-full text-sm focus:outline-none transition-all duration-300
+              className={`w-full h-12 sm:h-12 px-3 sm:px-4 rounded-full text-sm sm:text-base focus:outline-none transition-all duration-300
                 ${disabled
                   ? "bg-red-50 text-red-500 placeholder:text-red-400 font-semibold cursor-not-allowed border-2 border-red-100"
                   : "bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-pink-400 focus:border-pink-400 disabled:opacity-50"
                 }`}
               data-testid="input-chat-message"
+              style={{ fontSize: '16px' }} // Prevent zoom on iOS
             />
             {disabled && (
               <button
@@ -161,7 +163,7 @@ export function ChatInput({
                   const paywallEvent = new CustomEvent('openPaywall');
                   window.dispatchEvent(paywallEvent);
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-yellow-900 text-xs font-bold rounded-full transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 whitespace-nowrap"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 sm:px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-yellow-900 text-xs font-bold rounded-full transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 whitespace-nowrap min-h-[36px]"
                 data-testid="button-upgrade-in-input"
               >
                 Upgrade
@@ -169,13 +171,14 @@ export function ChatInput({
             )}
           </div>
 
-          {/* Pink send button */}
+          {/* Pink send button - Larger touch target on mobile */}
           <button
             onClick={handleSend}
             disabled={isLoading || disabled || !message.trim()}
-            className="w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-300 disabled:hover:scale-100 flex-shrink-0"
+            className="w-12 h-12 sm:w-12 sm:h-12 rounded-full flex items-center justify-center disabled:opacity-50 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-300 disabled:hover:scale-100 flex-shrink-0 min-w-[48px] min-h-[48px]"
             style={{ backgroundColor: '#FF69B4' }}
             data-testid="button-send-message"
+            aria-label="Send message"
           >
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin text-white" />
@@ -185,12 +188,12 @@ export function ChatInput({
           </button>
         </div>
 
-        {/* Call Riya text with heart icon below - Centered */}
-        <div className="flex items-center justify-center gap-1.5 mt-2">
+        {/* Call Riya text with heart icon below - Centered - Larger touch target on mobile */}
+        <div className="flex items-center justify-center gap-1.5 mt-1.5 sm:mt-2">
           <Link href="/call">
-            <button className="flex items-center gap-1.5 transition-colors text-sm hover:opacity-80">
-              <span style={{ color: '#FF69B4' }}>Call Riya</span>
-              <Heart className="w-4 h-4" style={{ color: '#FF69B4', fill: '#FF69B4' }} />
+            <button className="flex items-center gap-1.5 transition-colors text-sm sm:text-base hover:opacity-80 active:opacity-70 px-3 py-2 min-h-[44px]">
+              <span style={{ color: '#FF69B4' }} className="font-medium">Call Riya</span>
+              <Heart className="w-4 h-4 flex-shrink-0" style={{ color: '#FF69B4', fill: '#FF69B4' }} />
             </button>
           </Link>
         </div>

@@ -10,6 +10,7 @@ import {
   BarChart3,
   MessageCircle,
   Heart,
+  ArrowLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,6 +31,7 @@ export function TopNavbar() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const isChatPage = location === '/chat';
+  const isCallPage = location === '/call';
 
   // Fetch user usage for chat page
   const { data: userUsage } = useQuery<{
@@ -69,71 +71,91 @@ export function TopNavbar() {
 
   return (
     <nav
-      className="fixed top-0 left-0 right-0 h-[60px] z-50"
+      className="fixed top-0 left-0 right-0 h-[60px] z-50 safe-area-inset-top"
       style={{
         background: '#FF69B4', // Solid pink background
+        paddingTop: 'var(--safe-area-inset-top, 0px)',
+        height: 'calc(60px + var(--safe-area-inset-top, 0px))',
       }}
     >
-      <div className="h-full w-full px-4 flex items-center justify-between">
-        {/* Left: Profile Section */}
-        <div className="flex items-center gap-3">
-          {/* Profile Circle with Riya text inside */}
-          <div className="relative flex-shrink-0">
-            <div
-              className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center"
-              style={{
-                background: '#FF69B4',
-              }}
+      <div className="h-full w-full px-3 sm:px-4 flex items-center justify-between max-w-full overflow-hidden">
+        {/* Left: Back Button (Call Page) or Profile Section (Other Pages) */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          {isCallPage ? (
+            /* Back Button for Call Page */
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setLocation('/chat')}
+              className="p-2 rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+              title="Back to Chat"
+              aria-label="Back to Chat"
             >
-              <span className="text-white font-bold text-sm">Riya</span>
-            </div>
-            {/* Green dot for active status - positioned bottom-right */}
-            <div 
-              className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"
-              style={{ borderColor: '#FF69B4' }}
-            ></div>
-          </div>
+              <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+            </Button>
+          ) : (
+            <>
+              {/* Profile Circle with Riya text inside */}
+              <div className="relative flex-shrink-0">
+                <div
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-white flex items-center justify-center"
+                  style={{
+                    background: '#FF69B4',
+                  }}
+                >
+                  <span className="text-white font-bold text-xs sm:text-sm">Riya</span>
+                </div>
+                {/* Green dot for active status - positioned bottom-right */}
+                <div 
+                  className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-green-500 rounded-full border-2 border-white"
+                  style={{ borderColor: '#FF69B4' }}
+                ></div>
+              </div>
 
-          {/* Name and Status */}
-          <div className="flex flex-col">
-            <span className="text-white font-semibold text-base leading-tight">
-              Riya
-            </span>
-            <span className="text-white text-xs flex items-center gap-1 leading-tight">
-              <span className="text-green-400 text-[10px]">●</span>
-              Active now
-            </span>
-          </div>
+              {/* Name and Status - Hidden on very small screens */}
+              <div className="hidden sm:flex flex-col min-w-0">
+                <span className="text-white font-semibold text-sm sm:text-base leading-tight truncate">
+                  Riya
+                </span>
+                <span className="text-white text-[10px] sm:text-xs flex items-center gap-1 leading-tight">
+                  <span className="text-green-400 text-[8px] sm:text-[10px]">●</span>
+                  <span className="truncate">Active now</span>
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right: Credits and Actions */}
-        <div className="flex items-center gap-3">
-          {/* ₹200 Left with heart icon */}
+        <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+          {/* ₹200 Left with heart icon - Smaller on mobile */}
           {isChatPage && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-white font-semibold text-sm">
-                ₹{typeof remainingCredits === 'number' ? remainingCredits : '200'} Left
+            <div className="flex items-center gap-1">
+              <span className="text-white font-semibold text-xs sm:text-sm whitespace-nowrap">
+                ₹{typeof remainingCredits === 'number' ? remainingCredits : '200'}
               </span>
-              <Heart className="w-4 h-4 text-white fill-white" />
+              <Heart className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white fill-white flex-shrink-0" />
             </div>
           )}
 
-          {/* Voice Call Button */}
+          {/* Voice Call Button - Larger touch target on mobile */}
           <Link href="/call">
             <button
-              className="p-2 rounded-full text-white hover:bg-white/20 transition-colors flex-shrink-0"
+              className="p-2.5 sm:p-2 rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
               title="Voice Call"
+              aria-label="Voice Call"
             >
               <Phone className="w-5 h-5" />
             </button>
           </Link>
 
-          {/* Dropdown Menu Trigger */}
+          {/* Dropdown Menu Trigger - Larger touch target on mobile */}
           <div className="relative">
             <button
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="p-2 rounded-full text-white hover:bg-white/20 transition-colors"
+              className="p-2.5 sm:p-2 rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
               title="More options"
+              aria-label="More options"
             >
               <MoreVertical className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
@@ -152,7 +174,7 @@ export function TopNavbar() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 top-full mt-3 w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl z-50 border border-white/40 overflow-hidden py-2 ring-1 ring-black/5"
+                    className="absolute right-0 top-full mt-2 sm:mt-3 w-72 sm:w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl z-50 border border-white/40 overflow-hidden py-2 ring-1 ring-black/5"
                   >
                     {/* Relationship Profile */}
                     <Link href="/summary">

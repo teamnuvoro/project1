@@ -19,6 +19,7 @@ import analyticsRoutes from "./routes/analytics-events";
 import reminderRoutes from "./routes/reminders";
 import imageRoutes from "./routes/images";
 import { initializeReminderScheduler } from "./jobs/reminder-scheduler";
+import { initializeHookbackScheduler } from "./jobs/hookback-scheduler";
 
 const app = express();
 
@@ -176,6 +177,9 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
       
       // Initialize reminder scheduler
       initializeReminderScheduler();
+      
+      // Initialize hookback scheduler (UDO WhatsApp)
+      initializeHookbackScheduler();
     });
   })();
 }

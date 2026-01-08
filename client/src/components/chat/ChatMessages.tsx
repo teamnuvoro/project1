@@ -45,7 +45,7 @@ export function ChatMessages({ messages, isLoading, isMobile, isTyping }: ChatMe
     <div 
       ref={containerRef}
       onScroll={handleScroll}
-      className="h-full w-full overflow-y-auto px-4 py-3 bg-white relative"
+      className="h-full w-full overflow-y-auto px-3 sm:px-4 py-2 sm:py-3 bg-white relative"
       style={{
         scrollbarWidth: 'thin',
         scrollbarColor: 'rgba(255, 105, 180, 0.3) transparent',
@@ -59,7 +59,7 @@ export function ChatMessages({ messages, isLoading, isMobile, isTyping }: ChatMe
         backgroundPosition: '0 0, 12px 12px, 25px 25px'
       }}
     >
-      <div className="max-w-2xl mx-auto w-full space-y-3 sm:space-y-4">
+      <div className="max-w-2xl mx-auto w-full space-y-2.5 sm:space-y-4">
         {/* Relationship Tip Card */}
         {showTip && (
           <div className="tip-card mb-4 animate-bubble">

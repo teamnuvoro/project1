@@ -704,14 +704,20 @@ export default function CallPage() {
           background: 'linear-gradient(180deg, #9333ea 0%, #a855f7 30%, #c084fc 60%, #e9d5ff 100%)'
         }}
       >
-        {/* Timer */}
+        {/* Timer - Positioned at top right when call is active */}
         {isCallActive && (
-          <div className={`absolute top-4 left-4 backdrop-blur-sm rounded-full px-4 py-2 flex items-center gap-2 ${!userUsage?.premiumUser ? 'bg-red-500/80 animate-pulse' : 'bg-black/30'
-            }`}>
+          <div 
+            className={`absolute backdrop-blur-sm rounded-full px-2.5 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1.5 sm:gap-2 ${!userUsage?.premiumUser ? 'bg-red-500/80 animate-pulse' : 'bg-black/30'
+            }`}
+            style={{
+              top: 'calc(4rem + var(--safe-area-inset-top, 0px))',
+              right: '1rem',
+            }}
+          >
             {!userUsage?.premiumUser && (
-              <span className="text-white/90 text-xs font-bold uppercase tracking-wider">Free Trial:</span>
+              <span className="text-white/90 text-[10px] sm:text-xs font-bold uppercase tracking-wider hidden sm:inline">Free Trial:</span>
             )}
-            <span className="text-white font-mono text-lg" data-testid="text-call-duration">
+            <span className="text-white font-mono text-sm sm:text-base md:text-lg whitespace-nowrap" data-testid="text-call-duration">
               {!userUsage?.premiumUser
                 ? formatTime(Math.max(0, remainingFreeSeconds - sessionDuration))
                 : formatTime(sessionDuration)
@@ -779,73 +785,76 @@ export default function CallPage() {
 
       {/* Bottom Section - Controls */}
       {isCallActive && (
-        <div className="bg-gray-900 px-6 py-8">
+        <div className="bg-gray-900 px-4 sm:px-6 py-6 sm:py-8 pb-safe">
           {/* Control Buttons */}
-          <div className="flex justify-center items-center gap-8 mb-6">
+          <div className="flex justify-center items-center gap-4 sm:gap-6 md:gap-8 mb-4 sm:mb-6">
             {/* Mute Button */}
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5 sm:gap-2">
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={toggleMute}
-                className={`w-16 h-16 rounded-full ${isMuted
+                className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full min-w-[56px] min-h-[56px] ${isMuted
                   ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                   : 'bg-gray-700 text-white hover:bg-gray-600'
                   }`}
                 data-testid="button-mute"
+                aria-label="Mute microphone"
               >
-                {isMuted ? <MicOff className="w-7 h-7" /> : <Mic className="w-7 h-7" />}
+                {isMuted ? <MicOff className="w-6 h-6 sm:w-7 sm:h-7" /> : <Mic className="w-6 h-6 sm:w-7 sm:h-7" />}
               </Button>
-              <span className="text-gray-400 text-sm">Mute</span>
+              <span className="text-gray-400 text-xs sm:text-sm">Mute</span>
             </div>
 
             {/* Speaker Button */}
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5 sm:gap-2">
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={toggleSpeaker}
-                className={`w-16 h-16 rounded-full ${isSpeakerOn
+                className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full min-w-[56px] min-h-[56px] ${isSpeakerOn
                   ? 'bg-gray-700 text-white hover:bg-gray-600'
                   : 'bg-gray-700/50 text-gray-500 hover:bg-gray-600'
                   }`}
                 data-testid="button-speaker"
+                aria-label="Toggle speaker"
               >
-                <Volume2 className="w-7 h-7" />
+                <Volume2 className="w-6 h-6 sm:w-7 sm:h-7" />
               </Button>
-              <span className="text-gray-400 text-sm">Speaker</span>
+              <span className="text-gray-400 text-xs sm:text-sm">Speaker</span>
             </div>
 
             {/* End Call Button */}
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5 sm:gap-2">
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={handleEndCall}
-                className="w-16 h-16 rounded-full bg-red-500 text-white hover:bg-red-600"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-500 text-white hover:bg-red-600 min-w-[56px] min-h-[56px]"
                 data-testid="button-end-call"
+                aria-label="End call"
               >
-                <PhoneOff className="w-7 h-7" />
+                <PhoneOff className="w-6 h-6 sm:w-7 sm:h-7" />
               </Button>
-              <span className="text-red-400 text-sm">End</span>
+              <span className="text-red-400 text-xs sm:text-sm">End</span>
             </div>
           </div>
 
           {/* Tip Banner */}
-          <div className="bg-amber-500/90 rounded-xl px-4 py-3 flex items-center gap-3">
-            <Lightbulb className="w-5 h-5 text-amber-900 flex-shrink-0" />
-            <p className="text-amber-900 text-sm font-medium">
+          <div className="bg-amber-500/90 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <Lightbulb className="w-4 h-4 sm:w-5 sm:h-5 text-amber-900 flex-shrink-0" />
+            <p className="text-amber-900 text-xs sm:text-sm font-medium">
               The AI will greet you first, then you can start talking!
             </p>
           </div>
 
           {/* Free User Warning */}
           {!userUsage?.premiumUser && (
-            <div className="mt-4 bg-gradient-to-r from-pink-500/20 to-purple-500/20 rounded-xl px-4 py-3 text-center">
-              <p className="text-gray-300 text-sm">
+            <div className="bg-gradient-to-r from-pink-500/20 to-purple-500/20 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-center">
+              <p className="text-gray-300 text-xs sm:text-sm">
                 Time remaining: {formatTime(Math.max(0, remainingFreeSeconds - sessionDuration))}
               </p>
-              <p className="text-gray-500 text-xs mt-1">
+              <p className="text-gray-500 text-[10px] sm:text-xs mt-1">
                 Session: {formatTime(sessionDuration)} | Total used: {formatTime(totalUsedSeconds + sessionDuration)} / 2:15
               </p>
             </div>
@@ -855,7 +864,7 @@ export default function CallPage() {
 
       {/* Idle State Bottom */}
       {!isCallActive && (
-        <div className="bg-gray-900 px-6 py-8">
+        <div className="bg-gray-900 px-4 sm:px-6 py-6 sm:py-8 pb-safe">
           <div className="bg-purple-500/20 rounded-xl px-4 py-4 text-center">
             <p className="text-purple-300 text-sm mb-2">
               Start a voice call to talk with Riya

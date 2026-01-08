@@ -63,3 +63,16 @@ export function getCashfreePlanConfig() {
   };
 }
 
+// =====================================================
+// UDO WHATSAPP CONFIGURATION
+// =====================================================
+
+export function getUDOWhatsAppConfig() {
+  return {
+    apiKey: (process.env.UDO_API_KEY ?? "").trim(),
+    whatsappNumber: (process.env.UDO_WHATSAPP_NUMBER ?? "").trim(),
+    hookbackTemplateName: (process.env.UDO_HOOKBACK_TEMPLATE_NAME ?? "hookback_inactive_user").trim(),
+    inactiveDaysThreshold: parseInt(process.env.HOOKBACK_INACTIVE_DAYS || "3", 10),
+  };
+}
+

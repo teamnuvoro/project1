@@ -65,7 +65,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
     >
       <motion.div 
         whileHover={{ scale: 1.01 }}
-        className={`max-w-[85%] px-3 py-2.5 ${
+        className={`max-w-[85%] sm:max-w-[80%] px-3 sm:px-4 py-2.5 sm:py-3 ${
           isAI 
             ? 'rounded-2xl rounded-tl-sm' 
             : 'rounded-2xl rounded-tr-sm'
@@ -98,7 +98,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
         
         <p 
-          className="text-base leading-relaxed whitespace-pre-wrap break-words mb-1" 
+          className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words mb-1" 
           data-testid={`text-message-content-${message.id}`}
           style={{
             color: isAI ? '#333333' : '#FFFFFF'
@@ -107,7 +107,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           {content || "..."}
         </p>
         <p 
-          className={`text-xs ${isAI ? "text-gray-600" : "text-white/80"}`}
+          className={`text-[10px] sm:text-xs ${isAI ? "text-gray-600" : "text-white/80"}`}
           data-testid={`text-timestamp-${message.id}`}
         >
           {message.createdAt ? format(new Date(message.createdAt), 'H:mm') : ''}
