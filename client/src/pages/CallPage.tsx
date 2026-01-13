@@ -9,6 +9,7 @@ import { analytics } from "@/lib/analytics";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { isVapiConfigured, AI_ASSISTANTS } from '@/config/vapi-config';
+import RiyaVoiceCall from '@/components/voice/RiyaVoiceCall';
 
 type CallStatus = 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'ended';
 
@@ -234,7 +235,11 @@ export default function CallPage() {
 
       // 1. Stop Vapi
       if (vapiRef.current) {
-        vapiRef.current.stop();
+        try {
+          vapiRef.current.stop();
+        } catch {
+          // ignore
+        }
       }
 
       // 2. Stop Bolna WebSocket
@@ -246,10 +251,10 @@ export default function CallPage() {
       // 3. Stop the Microphone (Browser Native)
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
       }
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        stream.getTracks().forEach(track => track.stop());
-      }).catch(() => { });
+      // IMPORTANT: Do NOT call getUserMedia() during cleanup.
+      // That can re-prompt permissions or throw on some browsers.
 
       // 4. Stop the AI Speech (Browser Native)
       window.speechSynthesis.cancel();
@@ -694,6 +699,22 @@ export default function CallPage() {
   const callConfigured = callConfig?.provider === 'bolna' 
     ? (isBolnaReady && callConfig?.ready)
     : (isVapiConfigured() || !!callConfig?.publicKey);
+
+  // If Sarvam is the configured provider, use the dedicated Sarvam voice component.
+  // This check MUST be after all hooks to avoid "Rendered fewer hooks" error.
+  if (callConfig?.ready && callConfig?.provider === 'sarvam') {
+    return (
+      <div className="flex flex-col h-full w-full items-center justify-center p-6" style={{
+        background: 'linear-gradient(180deg, #9333ea 0%, #a855f7 30%, #c084fc 60%, #e9d5ff 100%)'
+      }}>
+        {user?.id ? (
+          <RiyaVoiceCall userId={user.id} />
+        ) : (
+          <div className="text-muted-foreground">Loading user…</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">

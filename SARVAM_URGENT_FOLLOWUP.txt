@@ -1,0 +1,78 @@
+Subject: URGENT - 422 Error Persisting Despite Following Specification Exactly
+
+Hi Sarvam Team,
+
+We're still getting a 422 validation error even though we're sending messages in the exact format you specified. We need urgent help to resolve this.
+
+THE ERROR (Still Happening):
+```
+{
+  "type": "error",
+  "data": {
+    "request_id": "20260109_3ba30e6a-d369-4737-bb12-e7444074d5e0",
+    "message": "Input parameters has to be a valid dictionary",
+    "code": 422
+  }
+}
+```
+
+WHAT WE'RE SENDING (Exactly as you specified):
+
+Config Message:
+```json
+{
+  "type": "config",
+  "data": {
+    "target_language_code": "hi-IN",
+    "speaker": "meera",
+    "pitch": 0,
+    "pace": 1,
+    "loudness": 1.5,
+    "speech_sample_rate": 24000,
+    "enable_preprocessing": true
+  }
+}
+```
+
+We've also tried:
+- Parameters at root level (without "data" wrapper)
+- Minimal config (just target_language_code and speaker)
+- All produce the same 422 error
+
+CONNECTION DETAILS:
+- WebSocket URL: wss://api.sarvam.ai/text-to-speech/ws?model=bulbul%3Av2&send_completion_event=true
+- Authentication: Api-Subscription-Key header (working - we get structured error responses)
+- Connection: Establishes successfully ✅
+- Error: Occurs immediately when sending config message ❌
+
+CODE VERIFICATION:
+- ✅ JSON.stringify() called exactly once
+- ✅ Valid JSON structure (verified)
+- ✅ WebSocket.send() sends as text frame
+- ✅ No double encoding
+
+QUESTIONS:
+1. Is there a specific encoding required for the WebSocket message?
+2. Do we need to send the message as binary instead of text?
+3. Are there any additional headers or query parameters required?
+4. Can you provide a working example payload that we can test?
+5. Is there a different WebSocket endpoint for bulbul:v2?
+
+We've followed your specification exactly but the server validation keeps rejecting it. Can you verify the exact format on your end and confirm if there's something we're missing?
+
+Request IDs (Most Recent First):
+- 20260109_8bddb686-653c-41b7-8791-0ba506a21187 (LATEST - JSON verified valid)
+- 20260109_3ba30e6a-d369-4737-bb12-e7444074d5e0
+- 20260109_5c77ffb7-236c-408b-99d7-2f205608f52e
+- 20260109_df785fb4-9ea7-47db-9cc3-20ead3520cdc
+
+ADDITIONAL VERIFICATION:
+- ✅ JSON.stringify() produces valid JSON
+- ✅ JSON.parse() successfully parses it back (verified in logs)
+- ✅ Message sent as text frame (not binary)
+- ✅ Message bytes verified: Starts with valid UTF-8 JSON structure
+
+This is blocking our integration. Please help ASAP.
+
+Thanks!
+

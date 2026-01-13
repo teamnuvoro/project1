@@ -36,39 +36,133 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
   
   // Call state
   const callIdRef = useRef<string | null>(null);
+  const callSessionRowIdRef = useRef<string | null>(null);
+  const callStartedAtRef = useRef<number | null>(null);
   const conversationHistoryRef = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const isCleaningUpRef = useRef(false);
+  
+  // Audio accumulation for TTS (buffer multiple small chunks before playing)
+  const accumulatedAudioRef = useRef<ArrayBuffer[]>([]);
+  const audioAccumulationTimerRef = useRef<number | null>(null);
+  
+  // Cleanup accumulated audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioAccumulationTimerRef.current) {
+        clearTimeout(audioAccumulationTimerRef.current);
+      }
+      accumulatedAudioRef.current = [];
+    };
+  }, []);
 
   /**
-   * Get API key from environment or config
+   * Convert PCM to WAV format for browser playback
    */
-  const getApiKey = useCallback(() => {
-    // API key should be available from backend via /api/call/config
-    // For now, we'll get it from the call start response
-    return null; // Will be set via WebSocket headers if needed
+  const convertPCMToWAV = useCallback((pcmData: ArrayBuffer, sampleRate: number = 24000, numChannels: number = 1, bitsPerSample: number = 16): Blob => {
+    const length = pcmData.byteLength;
+    const buffer = new ArrayBuffer(44 + length);
+    const view = new DataView(buffer);
+    
+    // WAV header
+    const writeString = (offset: number, string: string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true); // fmt chunk size
+    view.setUint16(20, 1, true); // audio format (1 = PCM)
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true); // byte rate
+    view.setUint16(32, numChannels * bitsPerSample / 8, true); // block align
+    view.setUint16(34, bitsPerSample, true);
+    writeString(36, 'data');
+    view.setUint32(40, length, true);
+    
+    // Copy PCM data
+    const pcmView = new Uint8Array(pcmData);
+    const wavView = new Uint8Array(buffer, 44);
+    wavView.set(pcmView);
+    
+    return new Blob([buffer], { type: 'audio/wav' });
   }, []);
+
+  /**
+   * Fallback: Play audio using Web Audio API
+   */
+  const playAudioWithWebAudio = useCallback(async (audioBlob: Blob) => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      }
+
+      const audioCtx = audioContextRef.current;
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      
+      // Try decoding directly first (might be WAV/MP3)
+      try {
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        source.start(0);
+        console.log('[Sarvam] Playing audio via Web Audio API (decoded directly)');
+        return;
+      } catch (decodeError) {
+        console.log('[Sarvam] Direct decode failed, trying PCM to WAV conversion:', decodeError);
+      }
+      
+      // If direct decode fails, assume it's raw PCM and convert to WAV
+      // Sarvam TTS typically sends 24kHz, 16-bit PCM, mono
+      const wavBlob = convertPCMToWAV(arrayBuffer, 24000, 1, 16);
+      const wavArrayBuffer = await wavBlob.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(wavArrayBuffer);
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+      source.start(0);
+      console.log('[Sarvam] Playing audio via Web Audio API (PCM converted to WAV)');
+    } catch (err) {
+      console.error('[Sarvam] Web Audio API error:', err);
+      throw err;
+    }
+  }, [convertPCMToWAV]);
 
   /**
    * Play audio from TTS WebSocket
    */
   const playAudio = useCallback(async (audioBlob: Blob) => {
     try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-      }
-
-      const audioCtx = audioContextRef.current;
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      const source = audioCtx.createBufferSource();
+      // Try using HTML5 Audio element first (handles more formats)
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
       
-      source.buffer = audioBuffer;
-      source.connect(audioCtx.destination);
-      source.start(0);
-    } catch (err) {
-      console.error('[Sarvam] Error playing audio:', err);
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+      };
+      
+      audio.onerror = (err) => {
+        console.error('[Sarvam] Audio element error:', err);
+        URL.revokeObjectURL(audioUrl);
+        // Fallback to Web Audio API
+        playAudioWithWebAudio(audioBlob).catch(e => {
+          console.error('[Sarvam] Web Audio API also failed:', e);
+        });
+      };
+      
+      await audio.play();
+      console.log('[Sarvam] Playing audio via HTML5 Audio');
+    } catch (err: any) {
+      console.warn('[Sarvam] HTML5 Audio failed, trying Web Audio API:', err);
+      // Fallback to Web Audio API
+      await playAudioWithWebAudio(audioBlob);
     }
-  }, []);
+  }, [playAudioWithWebAudio]);
 
   /**
    * Handle STT WebSocket messages
@@ -124,22 +218,21 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
               content: aiResponse,
             });
 
-            // Send to TTS WebSocket
+            // ✅ OFFICIAL DOCS FORMAT: The documentation shows "data" wrapper IS required
+            // See: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/text-to-speech/streaming-api
+            // Note: Config should already be set from initial greeting, so only text message needed
             if (ttsWsRef.current?.readyState === WebSocket.OPEN) {
-              // Send text message
-              ttsWsRef.current.send(JSON.stringify({
-                action: 'speak',
-                text: aiResponse,
-              }));
-
-              // Send flush message
-              setTimeout(() => {
-                if (ttsWsRef.current?.readyState === WebSocket.OPEN) {
-                  ttsWsRef.current.send(JSON.stringify({
-                    action: 'flush',
-                  }));
+              const textMessage = {
+                type: "text",
+                data: {
+                  text: aiResponse
                 }
-              }, 100);
+              };
+              
+              console.log('[Sarvam] Sending TTS text message:', aiResponse.substring(0, 100));
+              ttsWsRef.current.send(JSON.stringify(textMessage));
+            } else {
+              console.warn('[Sarvam] TTS WebSocket not open, cannot send response. State:', ttsWsRef.current?.readyState);
             }
           } catch (err: any) {
             console.error('[Sarvam] Error generating response:', err);
@@ -157,41 +250,164 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
   }, [toast]);
 
   /**
+   * Process accumulated audio chunks and play them
+   */
+  const playAccumulatedAudio = useCallback(async () => {
+    if (accumulatedAudioRef.current.length === 0) {
+      return;
+    }
+
+    // Combine all accumulated PCM chunks
+    const totalLength = accumulatedAudioRef.current.reduce((sum, buf) => sum + buf.byteLength, 0);
+    const combinedBuffer = new ArrayBuffer(totalLength);
+    const combinedView = new Uint8Array(combinedBuffer);
+    
+    let offset = 0;
+    for (const chunk of accumulatedAudioRef.current) {
+      combinedView.set(new Uint8Array(chunk), offset);
+      offset += chunk.byteLength;
+    }
+
+    console.log('[Sarvam] Playing accumulated audio:', totalLength, 'bytes (~', Math.round(totalLength / 48000 * 1000), 'ms)');
+
+    // Clear accumulated chunks
+    accumulatedAudioRef.current = [];
+
+    // Convert combined PCM to WAV and play
+    if (totalLength > 0) {
+      try {
+        const wavBlob = convertPCMToWAV(combinedBuffer, 24000, 1, 16);
+        await playAudio(wavBlob);
+      } catch (err) {
+        console.error('[Sarvam] Error playing accumulated audio:', err);
+      }
+    }
+  }, [convertPCMToWAV, playAudio]);
+
+  /**
    * Handle TTS WebSocket messages
+   * IMPORTANT: Check for text (JSON) messages FIRST, then binary (audio) messages
    */
   const handleTTSMessage = useCallback(async (event: MessageEvent) => {
     try {
-      // Handle audio chunks (Blob)
-      if (event.data instanceof Blob) {
-        await playAudio(event.data);
-      }
-      // Handle JSON messages (completion events)
-      else if (typeof event.data === 'string') {
-        const data = JSON.parse(event.data);
-        if (data.completion) {
-          console.log('[Sarvam] TTS completion event');
+      // FIRST: Check if message is text (JSON) - this includes error messages, completion events, etc.
+      if (typeof event.data === 'string') {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('[Sarvam] Received TEXT message (JSON):', data);
+          
+          // Check for error messages
+          if (data.error || data.detail || data.status === 'failed' || data.status === 'error' || data.type === 'error') {
+            const errorMessage = data.data?.message || data.detail || data.error || data.message || 'Unknown error';
+            const errorCode = data.data?.code || data.code;
+            console.error('🚨 [Sarvam] TTS Error message:', data);
+            setError(`TTS Error (${errorCode || 'N/A'}): ${errorMessage}`);
+            
+            // Show toast notification to user
+            toast({
+              title: 'Voice Call Error',
+              description: errorMessage,
+              variant: 'destructive',
+            });
+            
+            // Optionally end the call on error
+            // handleEndCall();
+            return; // Don't process as audio
+          }
+          
+          // Handle completion events
+          if (data.completion) {
+            console.log('[Sarvam] TTS completion event - audio generation complete');
+            // Clear timer and play all accumulated audio immediately
+            if (audioAccumulationTimerRef.current) {
+              clearTimeout(audioAccumulationTimerRef.current);
+              audioAccumulationTimerRef.current = null;
+            }
+            await playAccumulatedAudio();
+            return;
+          }
+          
+          // Handle other JSON events (status, progress, etc.)
+          if (data.status || data.progress || data.event) {
+            console.log('[Sarvam] TTS status/event message:', data);
+            return; // Don't process as audio
+          }
+          
+          // If JSON but not recognized, log it
+          console.log('[Sarvam] Unrecognized JSON message:', data);
+        } catch (parseErr) {
+          // Not valid JSON, might be plain text error
+          console.warn('🚨 [Sarvam] Received text message (not JSON):', event.data.substring(0, 200));
+          return; // Don't process as audio
         }
+        return; // Text message handled, don't process as audio
+      }
+      
+      // SECOND: Handle binary audio data (Blob or ArrayBuffer)
+      // Sarvam TTS sends raw PCM audio (24kHz, 16-bit, mono), which must be converted to WAV
+      if (event.data instanceof Blob) {
+        const size = event.data.size;
+        console.log('[Sarvam] Received audio Blob:', size, 'bytes, type:', event.data.type || 'none');
+        
+        if (size > 0) {
+          // Accumulate raw PCM data (don't convert yet)
+          const arrayBuffer = await event.data.arrayBuffer();
+          accumulatedAudioRef.current.push(arrayBuffer);
+          
+          const totalAccumulated = accumulatedAudioRef.current.reduce((sum, buf) => sum + buf.byteLength, 0);
+          console.log('[Sarvam] Accumulated audio:', size, 'bytes (total:', totalAccumulated, 'bytes, chunks:', accumulatedAudioRef.current.length, ')');
+          
+          // Clear any pending timer
+          if (audioAccumulationTimerRef.current) {
+            clearTimeout(audioAccumulationTimerRef.current);
+          }
+          
+          // Wait a bit more for additional chunks before playing
+          audioAccumulationTimerRef.current = window.setTimeout(() => {
+            playAccumulatedAudio();
+          }, 300); // 300ms buffer window
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        const size = event.data.byteLength;
+        console.log('[Sarvam] Received audio ArrayBuffer:', size, 'bytes');
+        
+        if (size > 0) {
+          // Accumulate raw PCM data (don't convert yet)
+          accumulatedAudioRef.current.push(event.data);
+          
+          const totalAccumulated = accumulatedAudioRef.current.reduce((sum, buf) => sum + buf.byteLength, 0);
+          console.log('[Sarvam] Accumulated audio:', size, 'bytes (total:', totalAccumulated, 'bytes, chunks:', accumulatedAudioRef.current.length, ')');
+          
+          // Clear any pending timer
+          if (audioAccumulationTimerRef.current) {
+            clearTimeout(audioAccumulationTimerRef.current);
+          }
+          
+          // Wait a bit more for additional chunks before playing
+          audioAccumulationTimerRef.current = window.setTimeout(() => {
+            playAccumulatedAudio();
+          }, 300); // 300ms buffer window
+        }
+      } else {
+        // Unknown message type
+        console.warn('[Sarvam] Received unknown message type:', typeof event.data, event.data);
       }
     } catch (err) {
       console.error('[Sarvam] Error processing TTS message:', err);
     }
-  }, [playAudio]);
+  }, [playAccumulatedAudio, setError]);
 
   /**
-   * Connect to STT WebSocket
+   * Connect to STT WebSocket via proxy
    */
-  const connectSTT = useCallback((wsUrl: string, apiKey: string) => {
+  const connectSTTProxy = useCallback((proxyUrl: string) => {
     return new Promise<void>((resolve, reject) => {
       try {
-        // Add API key as query parameter (browser WebSocket doesn't support headers)
-        // Try subscription-key to match the header name used in server code
-        const url = new URL(wsUrl);
-        url.searchParams.set('subscription-key', apiKey);
-        
-        const ws = new WebSocket(url.toString());
+        console.log('[Sarvam] Connecting to STT proxy:', proxyUrl);
+        const ws = new WebSocket(proxyUrl);
         
         ws.onopen = () => {
-          console.log('[Sarvam] STT WebSocket connected');
+          console.log('[Sarvam] STT proxy connected');
           sttWsRef.current = ws;
           resolve();
         };
@@ -199,16 +415,15 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
         ws.onmessage = handleSTTMessage;
 
         ws.onerror = (err) => {
-          console.error('[Sarvam] STT WebSocket error:', err);
-          reject(new Error('STT connection error'));
+          console.error('[Sarvam] STT proxy error:', err);
+          reject(new Error('STT proxy connection error'));
         };
 
         ws.onclose = (event) => {
-          console.log('[Sarvam] STT WebSocket closed:', event.code, event.reason);
+          console.log('[Sarvam] STT proxy closed:', event.code, event.reason);
           sttWsRef.current = null;
           if (event.code !== 1000 && event.code !== 1001) {
-            // Only reject if it's an abnormal closure
-            reject(new Error(`STT WebSocket closed abnormally: ${event.code} ${event.reason || ''}`));
+            reject(new Error(`STT proxy closed: ${event.code} ${event.reason || ''}`));
           }
         };
       } catch (err: any) {
@@ -218,48 +433,308 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
   }, [handleSTTMessage]);
 
   /**
-   * Connect to TTS WebSocket
+   * Connect to STT WebSocket (legacy - not used anymore)
    */
-  const connectTTS = useCallback((wsUrl: string, apiKey: string, language: string = 'hi-IN', speaker: string = 'meera') => {
+  const connectSTT = useCallback((wsUrl: string, apiKey: string) => {
+    return new Promise<void>((resolve, reject) => {
+      // Try different authentication methods
+      // Sarvam requires 'Api-Subscription-Key' header, but browsers can't send headers
+      // Try as query param and as first message
+      const authMethods = [
+        // Method 1: Connect without auth, send as first JSON message (some WebSocket APIs require this)
+        { 
+          param: 'first-message-json', 
+          url: (url: URL) => { /* No URL modification */ },
+          sendFirst: JSON.stringify({ 'Api-Subscription-Key': apiKey })
+        },
+        // Method 2: Api-Subscription-Key as query param (URL-encoded)
+        { param: 'Api-Subscription-Key', url: (url: URL) => { url.searchParams.set('Api-Subscription-Key', apiKey); }, sendFirst: null },
+        // Method 3: api-subscription-key (lowercase) as query param
+        { param: 'api-subscription-key', url: (url: URL) => { url.searchParams.set('api-subscription-key', apiKey); }, sendFirst: null },
+        // Method 4: api_key as query param
+        { param: 'api_key', url: (url: URL) => { url.searchParams.set('api_key', apiKey); }, sendFirst: null },
+      ];
+
+      let currentMethod = 0;
+      let ws: WebSocket | null = null;
+      let connectTimeout: NodeJS.Timeout;
+
+      const tryConnect = (methodIndex: number) => {
+        if (methodIndex >= authMethods.length) {
+          reject(new Error('All authentication methods failed. Please check your API key and Sarvam documentation.'));
+          return;
+        }
+
+        try {
+          const method = authMethods[methodIndex];
+          const url = new URL(wsUrl);
+          method.url(url);
+          
+          console.log(`[Sarvam] Trying STT connection method ${methodIndex + 1}/${authMethods.length}: ${method.param}`, url.toString().replace(apiKey, 'sk_***'));
+          
+          ws = new WebSocket(url.toString());
+          
+          connectTimeout = setTimeout(() => {
+            if (ws && ws.readyState !== WebSocket.OPEN) {
+              ws.close();
+              console.log(`[Sarvam] STT connection timeout with ${method.param}, trying next method...`);
+              tryConnect(methodIndex + 1);
+            }
+          }, 3000); // Reduced to 3 seconds per method
+
+          ws.onopen = () => {
+            console.log(`[Sarvam] STT WebSocket connected with ${method.param}`);
+            clearTimeout(connectTimeout);
+            
+            // If method requires sending auth as first message
+            if ((method as any).sendFirst && ws) {
+              try {
+                ws.send((method as any).sendFirst);
+                console.log('[Sarvam] Sent auth as first message:', (method as any).sendFirst.substring(0, 50) + '...');
+                // Wait a bit to see if connection stays open
+                setTimeout(() => {
+                  if (ws?.readyState === WebSocket.OPEN) {
+                    console.log('[Sarvam] STT WebSocket authenticated and ready');
+                    sttWsRef.current = ws;
+                    resolve();
+                  } else {
+                    console.log('[Sarvam] STT connection closed after auth - trying next method');
+                    ws?.close();
+                    tryConnect(methodIndex + 1);
+                  }
+                }, 1000);
+              } catch (e) {
+                console.warn('[Sarvam] Failed to send auth message:', e);
+                ws?.close();
+                tryConnect(methodIndex + 1);
+              }
+            } else {
+              // Normal connection - no first message needed
+              sttWsRef.current = ws;
+              resolve();
+            }
+          };
+
+          ws.onmessage = handleSTTMessage;
+
+          ws.onerror = (err) => {
+            console.error(`[Sarvam] STT WebSocket error with ${method.param}:`, err);
+            clearTimeout(connectTimeout);
+            if (ws) {
+              ws.close();
+            }
+            // Try next method
+            tryConnect(methodIndex + 1);
+          };
+
+          ws.onclose = (event) => {
+            console.log(`[Sarvam] STT WebSocket closed with ${method.param}:`, event.code, event.reason);
+            clearTimeout(connectTimeout);
+            sttWsRef.current = null;
+            
+            if (event.code === 1000 || event.code === 1001) {
+              // Normal closure - might be from previous connection
+              return;
+            }
+            
+            // If connection failed (not normal closure), try next method
+            if (event.code === 1006 || event.code === 1002) {
+              console.log(`[Sarvam] STT connection failed with ${method.param} (code ${event.code}), trying next method...`);
+              tryConnect(methodIndex + 1);
+            } else {
+              reject(new Error(`STT WebSocket closed abnormally: ${event.code} ${event.reason || ''}`));
+            }
+          };
+        } catch (err: any) {
+          reject(err);
+        }
+      };
+
+      tryConnect(0);
+    });
+  }, [handleSTTMessage]);
+
+  /**
+   * Connect to TTS WebSocket via proxy
+   */
+  const connectTTSProxy = useCallback((proxyUrl: string, language: string = 'hi-IN', speaker: string = 'riya') => {
     return new Promise<void>((resolve, reject) => {
       try {
-        // Add API key as query parameter (browser WebSocket doesn't support headers)
-        // Try subscription-key to match the header name used in server code
-        const url = new URL(wsUrl);
-        url.searchParams.set('subscription-key', apiKey);
-        
-        const ws = new WebSocket(url.toString());
+        console.log('[Sarvam] Connecting to TTS proxy:', proxyUrl);
+        const ws = new WebSocket(proxyUrl);
         
         ws.onopen = () => {
-          console.log('[Sarvam] TTS WebSocket connected');
-          // Send configuration
-          ws.send(JSON.stringify({
-            action: 'configure',
-            target_language_code: language,
-            speaker: speaker,
-          }));
+          console.log('[Sarvam] TTS proxy connected');
+          // Configuration and initial greeting are sent by the proxy server
+          // This ensures text is sent immediately after config to keep connection alive
           ttsWsRef.current = ws;
+          
+          // Clear any accumulated audio from previous calls
+          accumulatedAudioRef.current = [];
+          
           resolve();
         };
 
         ws.onmessage = handleTTSMessage;
 
         ws.onerror = (err) => {
-          console.error('[Sarvam] TTS WebSocket error:', err);
-          reject(new Error('TTS connection error'));
+          console.error('[Sarvam] TTS proxy error:', err);
+          reject(new Error('TTS proxy connection error'));
         };
 
         ws.onclose = (event) => {
-          console.log('[Sarvam] TTS WebSocket closed:', event.code, event.reason);
+          console.log('[Sarvam] TTS proxy closed:', event.code, event.reason);
           ttsWsRef.current = null;
           if (event.code !== 1000 && event.code !== 1001) {
-            // Only reject if it's an abnormal closure
-            reject(new Error(`TTS WebSocket closed abnormally: ${event.code} ${event.reason || ''}`));
+            reject(new Error(`TTS proxy closed: ${event.code} ${event.reason || ''}`));
           }
         };
       } catch (err: any) {
         reject(err);
       }
+    });
+  }, [handleTTSMessage]);
+
+  /**
+   * Connect to TTS WebSocket (legacy - not used anymore)
+   */
+  const connectTTS = useCallback((wsUrl: string, apiKey: string, language: string = 'hi-IN', speaker: string = 'riya') => {
+    return new Promise<void>((resolve, reject) => {
+      // Try different authentication methods
+      // Sarvam requires 'Api-Subscription-Key' header, but browsers can't send headers
+      // Try as query param and as first message
+      const authMethods = [
+        // Method 1: Connect without auth, send as first JSON message (some WebSocket APIs require this)
+        { 
+          param: 'first-message-json', 
+          url: (url: URL) => { /* No URL modification */ },
+          sendFirst: JSON.stringify({ 'Api-Subscription-Key': apiKey })
+        },
+        // Method 2: Api-Subscription-Key as query param (URL-encoded)
+        { param: 'Api-Subscription-Key', url: (url: URL) => { url.searchParams.set('Api-Subscription-Key', apiKey); }, sendFirst: null },
+        // Method 3: api-subscription-key (lowercase) as query param
+        { param: 'api-subscription-key', url: (url: URL) => { url.searchParams.set('api-subscription-key', apiKey); }, sendFirst: null },
+        // Method 4: api_key as query param
+        { param: 'api_key', url: (url: URL) => { url.searchParams.set('api_key', apiKey); }, sendFirst: null },
+      ];
+
+      let currentMethod = 0;
+      let ws: WebSocket | null = null;
+      let connectTimeout: NodeJS.Timeout;
+
+      const tryConnect = (methodIndex: number) => {
+        if (methodIndex >= authMethods.length) {
+          reject(new Error('All TTS authentication methods failed. Please check your API key and Sarvam documentation.'));
+          return;
+        }
+
+        try {
+          const method = authMethods[methodIndex];
+          const url = new URL(wsUrl);
+          method.url(url);
+          
+          console.log(`[Sarvam] Trying TTS connection method ${methodIndex + 1}/${authMethods.length}: ${method.param}`, url.toString().replace(apiKey, 'sk_***'));
+          
+          ws = new WebSocket(url.toString());
+          
+          connectTimeout = setTimeout(() => {
+            if (ws && ws.readyState !== WebSocket.OPEN) {
+              ws.close();
+              console.log(`[Sarvam] TTS connection timeout with ${method.param}, trying next method...`);
+              tryConnect(methodIndex + 1);
+            }
+          }, 5000);
+
+          ws.onopen = () => {
+            console.log(`[Sarvam] TTS WebSocket connected with ${method.param}`);
+            clearTimeout(connectTimeout);
+            
+            // If method requires sending auth as first message
+            if ((method as any).sendFirst && ws) {
+              try {
+                ws.send((method as any).sendFirst);
+                console.log('[Sarvam] Sent auth as first message:', (method as any).sendFirst.substring(0, 50) + '...');
+                // Wait a bit to see if connection stays open, then send config
+                setTimeout(() => {
+                  if (ws?.readyState === WebSocket.OPEN) {
+                    console.log('[Sarvam] TTS WebSocket authenticated and ready');
+                    // Send configuration after auth
+                    try {
+                      ws?.send(JSON.stringify({
+                        action: 'configure',
+                        target_language_code: language,
+                        speaker: speaker,
+                      }));
+                      console.log('[Sarvam] TTS configuration sent');
+                    } catch (e) {
+                      console.warn('[Sarvam] Failed to send TTS configuration:', e);
+                    }
+                    ttsWsRef.current = ws;
+                    resolve();
+                  } else {
+                    console.log('[Sarvam] TTS connection closed after auth - trying next method');
+                    ws?.close();
+                    tryConnect(methodIndex + 1);
+                  }
+                }, 1000);
+              } catch (e) {
+                console.warn('[Sarvam] Failed to send auth message:', e);
+                ws?.close();
+                tryConnect(methodIndex + 1);
+              }
+            } else {
+              // Normal connection - send config immediately
+              try {
+                ws?.send(JSON.stringify({
+                  action: 'configure',
+                  target_language_code: language,
+                  speaker: speaker,
+                }));
+                console.log('[Sarvam] TTS configuration sent');
+              } catch (e) {
+                console.warn('[Sarvam] Failed to send TTS configuration:', e);
+              }
+              ttsWsRef.current = ws;
+              resolve();
+            }
+          };
+
+          ws.onmessage = handleTTSMessage;
+
+          ws.onerror = (err) => {
+            console.error(`[Sarvam] TTS WebSocket error with ${method.param}:`, err);
+            clearTimeout(connectTimeout);
+            if (ws) {
+              ws.close();
+            }
+            // Try next method
+            tryConnect(methodIndex + 1);
+          };
+
+          ws.onclose = (event) => {
+            console.log(`[Sarvam] TTS WebSocket closed with ${method.param}:`, event.code, event.reason);
+            clearTimeout(connectTimeout);
+            ttsWsRef.current = null;
+            
+            if (event.code === 1000 || event.code === 1001) {
+              // Normal closure - might be from previous connection
+              return;
+            }
+            
+            // If connection failed (not normal closure), try next method
+            if (event.code === 1006 || event.code === 1002) {
+              console.log(`[Sarvam] TTS connection failed with ${method.param} (code ${event.code}), trying next method...`);
+              tryConnect(methodIndex + 1);
+            } else {
+              reject(new Error(`TTS WebSocket closed abnormally: ${event.code} ${event.reason || ''}`));
+            }
+          };
+        } catch (err: any) {
+          reject(err);
+        }
+      };
+
+      tryConnect(0);
     });
   }, [handleTTSMessage]);
 
@@ -326,64 +801,104 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
    * Start call
    */
   const handleStartCall = useCallback(async () => {
+    console.log('[Sarvam] Starting call...');
     try {
       setError(null);
       setIsConnecting(true);
 
+      // No need to fetch API key - proxy handles authentication
+
       // Call backend to start Sarvam call
+      console.log('[Sarvam] Starting call session...');
       const response = await apiRequest('POST', '/api/call/start', {
-        userId: userId || user?.id,
+        provider: 'sarvam',
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to start call');
-      }
-
       const data = await response.json();
-      callIdRef.current = data.sarvam_call_id || data.id;
+      console.log('[Sarvam] Call session response:', data);
       
-      // Get WebSocket URLs from metadata or response
-      const sttUrl = data.stt_websocket_url || data.metadata?.sttWebSocketUrl;
-      const ttsUrl = data.tts_websocket_url || data.metadata?.ttsWebSocketUrl;
+      callSessionRowIdRef.current = data.id || null;
+      callIdRef.current = data.sarvam_call_id || null;
+      callStartedAtRef.current = Date.now();
       
-      // Get API key from config endpoint
-      const configResponse = await apiRequest('GET', '/api/call/config');
-      const config = await configResponse.json();
-      const apiKey = config.apiKey;
+      // Use WebSocket proxy instead of direct connection (browsers can't send custom headers)
+      // The proxy handles authentication server-side
+      // Backend runs on port 3000, frontend on 3001
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const apiUrl = new URL(API_BASE);
+      const backendHost = `${apiUrl.hostname}:${apiUrl.port || '3000'}`;
+      
+      const sttProxyUrl = `${protocol}//${backendHost}/api/sarvam/ws/proxy?type=stt&language=hi-IN`;
+      const ttsProxyUrl = `${protocol}//${backendHost}/api/sarvam/ws/proxy?type=tts&language=hi-IN&speaker=riya&model=bulbul:v2`;
+      
+      console.log('[Sarvam] Connecting to STT via proxy:', sttProxyUrl);
+      console.log('[Sarvam] Connecting to TTS via proxy:', ttsProxyUrl);
 
-      if (!sttUrl || !ttsUrl) {
-        throw new Error('WebSocket URLs not provided by server');
+      // Connect to STT WebSocket proxy
+      console.log('[Sarvam] Connecting to STT proxy...');
+      const sttPromise = connectSTTProxy(sttProxyUrl);
+      const sttTimeout = new Promise<void>((_, reject) => 
+        setTimeout(() => reject(new Error('STT connection timeout after 10 seconds')), 10000)
+      );
+      try {
+        await Promise.race([sttPromise, sttTimeout]);
+        console.log('[Sarvam] STT connected via proxy!');
+      } catch (sttErr: any) {
+        console.error('[Sarvam] STT connection failed:', sttErr);
+        throw new Error(`Failed to connect STT: ${sttErr.message}`);
       }
 
-      if (!apiKey) {
-        throw new Error('Sarvam API key not configured');
+      // Connect to TTS WebSocket proxy
+      console.log('[Sarvam] Connecting to TTS proxy...');
+      const ttsPromise = connectTTSProxy(ttsProxyUrl);
+      const ttsTimeout = new Promise<void>((_, reject) => 
+        setTimeout(() => reject(new Error('TTS connection timeout after 10 seconds')), 10000)
+      );
+      try {
+        await Promise.race([ttsPromise, ttsTimeout]);
+        console.log('[Sarvam] TTS connected via proxy!');
+      } catch (ttsErr: any) {
+        console.error('[Sarvam] TTS connection failed:', ttsErr);
+        // Clean up STT if TTS fails
+        if (sttWsRef.current) {
+          sttWsRef.current.close();
+          sttWsRef.current = null;
+        }
+        throw new Error(`Failed to connect TTS: ${ttsErr.message}`);
       }
-
-      // Connect to STT and TTS WebSockets
-      // Note: Sarvam WebSocket URLs may need API key in headers or query params
-      // This is a placeholder - adjust based on actual Sarvam API requirements
-      await connectSTT(sttUrl, apiKey);
-      await connectTTS(ttsUrl, apiKey);
 
       setIsConnected(true);
       setIsConnecting(false);
       
       // Start recording
+      console.log('[Sarvam] Starting recording...');
       await startRecording();
+      console.log('[Sarvam] Call fully started!');
 
       analytics.track('voice_call_started', { provider: 'sarvam' });
     } catch (err: any) {
       console.error('[Sarvam] Error starting call:', err);
       setError(err.message || 'Failed to start call');
       setIsConnecting(false);
+      
+      // Clean up any partial connections
+      if (sttWsRef.current) {
+        sttWsRef.current.close();
+        sttWsRef.current = null;
+      }
+      if (ttsWsRef.current) {
+        ttsWsRef.current.close();
+        ttsWsRef.current = null;
+      }
+      
       toast({
-        title: 'Error',
-        description: err.message || 'Failed to initialize voice call. Please try again.',
+        title: 'Connection Error',
+        description: err.message || 'Failed to connect. Please try again.',
         variant: 'destructive',
       });
     }
-  }, [userId, user?.id, connectSTT, connectTTS, startRecording, toast]);
+  }, [connectSTTProxy, connectTTSProxy, startRecording, toast]);
 
   /**
    * End call
@@ -409,11 +924,18 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
       }
 
       // End call on backend
-      if (callIdRef.current) {
+      const sarvamCallId = callIdRef.current;
+      const sessionRowId = callSessionRowIdRef.current;
+      const startedAt = callStartedAtRef.current;
+      const durationSeconds = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
+
+      if (sarvamCallId || sessionRowId) {
         await apiRequest('POST', '/api/call/end', {
-          sessionId: callIdRef.current,
-          sarvamCallId: callIdRef.current,
-          provider: 'sarvam',
+          sessionId: sessionRowId || undefined,
+          sarvamCallId: sarvamCallId || undefined,
+          durationSeconds,
+          endReason: 'user_ended',
+          transcript: transcriptRef.current || undefined,
         });
       }
 
@@ -422,6 +944,8 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
       setTranscript('');
       transcriptRef.current = '';
       callIdRef.current = null;
+      callSessionRowIdRef.current = null;
+      callStartedAtRef.current = null;
       conversationHistoryRef.current = [];
       onCallEnd?.();
 
@@ -493,16 +1017,23 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
 
       // End call on backend (fire and forget - don't await in cleanup)
       const currentCallId = callIdRef.current;
+      const currentSessionRowId = callSessionRowIdRef.current;
+      const startedAt = callStartedAtRef.current;
+      const durationSeconds = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
       if (currentCallId) {
         apiRequest('POST', '/api/call/end', {
-          sessionId: currentCallId,
+          sessionId: currentSessionRowId || undefined,
           sarvamCallId: currentCallId,
-          provider: 'sarvam',
+          durationSeconds,
+          endReason: 'cleanup',
+          transcript: transcriptRef.current || undefined,
         }).catch(() => {
           // Ignore errors during cleanup
         });
         callIdRef.current = null;
       }
+      callSessionRowIdRef.current = null;
+      callStartedAtRef.current = null;
 
       // Clear refs
       transcriptRef.current = '';

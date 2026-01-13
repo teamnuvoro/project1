@@ -1,0 +1,62 @@
+Subject: 422 Validation Error - TTS WebSocket API (bulbul:v2)
+
+Hi Sarvam Team,
+
+I'm integrating the Sarvam TTS WebSocket API (bulbul:v2) and hitting a persistent 422 validation error that appears to be a server-side issue, not a client implementation problem.
+
+THE ISSUE:
+- WebSocket URL: wss://api.sarvam.ai/text-to-speech/ws?model=bulbul%3Av2&send_completion_event=true
+- Connection establishes successfully ✅
+- Authentication works (Api-Subscription-Key header) ✅
+- Error occurs immediately after sending first message: "422: Input parameters has to be a valid dictionary"
+
+ERROR RESPONSE:
+{
+  "type": "error",
+  "data": {
+    "request_id": "20260108_aa70ee24-2d66-4825-9030-53986720a28d",
+    "message": "Input parameters has to be a valid dictionary",
+    "code": 422
+  }
+}
+
+PAYLOAD WE'RE SENDING (valid JSON object):
+{
+  "inputs": ["Hello! I am Riya. How are you today?"],
+  "target_language_code": "hi-IN",
+  "speaker": "meera",
+  "pitch": 0,
+  "pace": 1.0,
+  "loudness": 1.5,
+  "speech_sample_rate": 24000,
+  "enable_preprocessing": true,
+  "model": "bulbul:v2"
+}
+
+WHAT WE'VE VERIFIED:
+✅ No double stringify - JSON.stringify() called exactly once
+✅ Valid JSON structure - verified with JSON.parse()
+✅ WebSocket sends as text frame (correct for JSON)
+✅ Connection and authentication work (we get structured error responses)
+
+WHAT WE'VE TRIED:
+1. Flat payload (above) - ❌ 422 Error
+2. Wrapped in {"action": "configure", "payload": {...}} - ❌ 422 Error
+3. Separate config step - ❌ 422 Error on config message
+4. Minimal payload (just {"inputs": [...]}) - ❌ 422 Error
+
+QUESTIONS:
+1. What is the correct payload format for bulbul:v2 WebSocket API?
+2. Should configuration be in URL params or JSON payload?
+3. Is "inputs" the correct key name?
+4. Is there updated documentation we should reference?
+
+The error message suggests the server's validation schema doesn't match our payload format. We need clarification on the exact expected structure.
+
+Request IDs for your logs:
+- 20260108_aa70ee24-2d66-4825-9030-53986720a28d (latest)
+- 20260108_37ad22ed-8ee7-4b0d-8f75-648252d9d92a
+- 20260108_b2478879-2176-440c-95bc-f10546c0f45f
+
+Thanks for your help!
+

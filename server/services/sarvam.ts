@@ -71,7 +71,7 @@ export function getSarvamSTTWebSocketUrl(language: string = 'hi-IN'): string {
 /**
  * Generate TTS WebSocket URL
  */
-export function getSarvamTTSWebSocketUrl(language: string = 'hi-IN', speaker: string = 'meera', model: string = 'bulbul:v2'): string {
+export function getSarvamTTSWebSocketUrl(language: string = 'hi-IN', speaker: string = 'riya', model: string = 'bulbul:v2'): string {
   const params = new URLSearchParams({
     'model': model,
     'send_completion_event': 'true',
@@ -215,7 +215,7 @@ export async function startSarvamCall(config: SarvamCallConfig): Promise<SarvamC
 
     // Get voice settings
     const language = config.voiceSettings?.language || 'hi-IN';
-    const speaker = config.voiceSettings?.speaker || 'meera';
+    const speaker = config.voiceSettings?.speaker || 'riya';
     const model = config.voiceSettings?.model || 'bulbul:v2';
 
     // Generate WebSocket URLs
