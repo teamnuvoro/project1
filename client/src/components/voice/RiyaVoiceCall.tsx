@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/dialog";
 
 // Initialize Vapi SDK
-const VAPI_PUBLIC_KEY = import.meta.env.VITE_VAPI_PUBLIC_KEY || 'dddc9544-777b-43d8-98dc-97ecb344e57f'; // Provided by user
+// HARDCODED as requested to rule out env var issues
+const VAPI_PUBLIC_KEY = 'dddc9544-777b-43d8-98dc-97ecb344e57f';
 const vapi = new Vapi(VAPI_PUBLIC_KEY);
 
 interface RiyaVoiceCallProps {
@@ -25,7 +26,10 @@ interface RiyaVoiceCallProps {
 export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps) {
   const [status, setStatus] = useState<"disconnected" | "connecting" | "connected" | "started" | "ended">("disconnected");
   const [isMuted, setIsMuted] = useState(false);
-  const [serverUrl, setServerUrl] = useState<string>(() => localStorage.getItem('riya_ngrok_url') || '');
+  const [serverUrl, setServerUrl] = useState<string>(() => {
+    // Priority: Local Storage -> Hardcoded fallback (User's URL) -> Env Var -> Empty
+    return localStorage.getItem('riya_ngrok_url') || 'https://prosurgical-nia-carpingly.ngrok-free.dev';
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const { toast } = useToast();
 
@@ -50,13 +54,9 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
     });
 
     vapi.on("error", (error) => {
-      console.error("Vapi Error:", error);
+      console.error("Vapi Error Event:", error);
       setStatus("disconnected");
-      toast({
-        title: "Voice Call Error",
-        description: "Connection failed. Please check your network or try again.",
-        variant: "destructive"
-      });
+      // Don't show toast for every minor error, but log it
     });
 
     return () => {
@@ -93,8 +93,7 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
       const fullApiUrl = `${cleanUrl}/api/vapi/chat`;
       console.log("Starting Vapi call with Server URL:", fullApiUrl);
 
-      // Start with Transient Assistant (No Assistant ID required) - As requested by user to avoid dashboard setup
-      await vapi.start({
+      const transientAssistantConfig = {
         transcriber: {
           provider: "deepgram",
           model: "nova-2",
@@ -117,7 +116,12 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
         metadata: {
           userId: userId
         }
-      });
+      };
+
+      console.log("Vapi Config:", JSON.stringify(transientAssistantConfig, null, 2));
+
+      // Start with Transient Assistant (No Assistant ID required)
+      await vapi.start(transientAssistantConfig as any);
 
     } catch (err) {
       console.error("Failed to start call:", err);
