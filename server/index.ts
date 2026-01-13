@@ -250,7 +250,8 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
             // DEBUG: Sending MINIMAL config to fix 422 error
             const configData: Record<string, any> = {
               speaker: "anushka", // Hardcoded valid ID for testing
-              target_language_code: "hi-IN"
+              target_language_code: "hi-IN",
+              output_audio_codec: "mp3"
             };
 
             // Remove any undefined/null values
@@ -401,7 +402,18 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
               console.log(`[Sarvam Proxy] Forwarding ${data.length} bytes to Sarvam TTS (binary)`);
             }
           }
-          sarvamWs.send(data);
+
+          // Delayed forwarding to prevent race condition + Flush
+          setTimeout(() => {
+            sarvamWs.send(data);
+
+            // Send Flush immediately after
+            if (type === 'tts') {
+              const flushMessage = JSON.stringify({ type: "flush" });
+              sarvamWs.send(flushMessage);
+              console.log(`[Sarvam Proxy] 🚽 Flush command sent (after 500ms delay)`);
+            }
+          }, 500);
         } else {
           console.warn(`[Sarvam Proxy] Dropped message from client - Sarvam ${type} not ready (state: ${sarvamWs.readyState})`);
         }
