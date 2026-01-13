@@ -175,83 +175,121 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
       }
     });
 
-    // Replaced Sarvam logic with Deepgram
+    // Replaced Sarvam logic with Deepgram (Split Traffic: TTS=Deepgram, STT=Sarvam)
     function handleVoiceProxy(clientWs: any, request: any) {
-      console.log('[Voice] Client connected to Voice Proxy (Deepgram)');
+      const url = new URL(request.url || '/', 'http://localhost');
+      const type = url.searchParams.get('type'); // 'stt' or 'tts'
 
-      clientWs.on('message', async (msg: Buffer) => {
-        try {
-          const textMsg = msg.toString();
-          // Try to parse as JSON first (standard format: { type: 'text', data: { text: '...' } })
-          let textToSpeak = '';
+      // =========================================================
+      // CASE 1: TTS (Text-to-Speech) -> USE DEEPGRAM (The Fix)
+      // =========================================================
+      if (type === 'tts') {
+        console.log('[Voice] Client connected to TTS (Deepgram)');
 
+        clientWs.on('message', async (msg: Buffer) => {
           try {
-            const parsed = JSON.parse(textMsg);
-            if (parsed.type === 'text' && parsed.data?.text) {
-              textToSpeak = parsed.data.text;
-            } else if (parsed.text) {
-              // Internal fallback format
-              textToSpeak = parsed.text;
-            }
-          } catch (e) {
-            // Not JSON, ignore or log
-            // Might be binary, but we expect text for TTS requests
-          }
+            // Parse Frontend Message
+            const msgStr = msg.toString();
+            let textToSpeak = '';
 
-          if (textToSpeak) {
-            console.log(`[Voice] Generating audio for: "${textToSpeak.substring(0, 50)}..."`);
-
-            if (!process.env.DEEPGRAM_API_KEY) {
-              console.error('[Voice] Missing DEEPGRAM_API_KEY');
-              clientWs.send(JSON.stringify({ type: 'error', message: 'Server missing Deepgram API Key' }));
-              return;
-            }
-
-            // Request Audio from Deepgram
-            const response = await deepgram.speak.request(
-              { text: textToSpeak },
-              {
-                model: "aura-asteria-en",
-                encoding: "linear16", // Raw PCM
-                container: "wav",     // WAV container (safe for browsers)
-                sample_rate: 24000,
+            try {
+              const parsed = JSON.parse(msgStr);
+              // Only respond to TEXT requests
+              if (parsed.type === 'text' && parsed.data?.text) {
+                textToSpeak = parsed.data.text;
               }
-            );
+            } catch (e) {
+              // Not JSON
+            }
 
-            // Stream the Audio back to the Client
-            const stream = await response.getStream();
+            if (textToSpeak) {
+              console.log(`[Voice] 🗣️ Speaking: "${textToSpeak.substring(0, 50)}..."`);
 
-            if (stream) {
-              const reader = stream.getReader();
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+              if (!process.env.DEEPGRAM_API_KEY) {
+                console.error('[Voice] Missing DEEPGRAM_API_KEY');
+                clientWs.send(JSON.stringify({ type: 'error', message: 'Server missing Deepgram API Key' }));
+                return;
+              }
 
-                if (clientWs.readyState === 1) {
-                  // Send binary audio chunk directly to frontend
-                  clientWs.send(value);
+              // Request Audio from Deepgram Aura
+              const response = await deepgram.speak.request(
+                { text: textToSpeak },
+                {
+                  model: "aura-asteria-en",
+                  encoding: "linear16",
+                  container: "wav",
+                  sample_rate: 24000,
+                }
+              );
+
+              // Stream Audio Back
+              const stream = await response.getStream();
+              if (stream) {
+                const reader = stream.getReader();
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (clientWs.readyState === 1) clientWs.send(value);
                 }
               }
-              console.log('[Voice] Audio stream finished');
-
-              // Optional: Send a marker that audio is done if frontend expects it
-              // clientWs.send(JSON.stringify({ type: 'audio_end' }));
-            } else {
-              console.error('[Voice] Error: No stream received from Deepgram');
             }
+          } catch (error) {
+            console.error('[Voice] TTS Error:', error);
           }
-        } catch (error) {
-          console.error('[Voice] Error processing message:', error);
+        });
+
+        clientWs.on('close', () => {
+          console.log('[Voice] TTS Client disconnected');
+        });
+
+        // =========================================================
+        // CASE 2: STT (Speech-to-Text) -> USE SARVAM (Restore Old Logic)
+        // =========================================================
+      } else {
+        console.log('[Voice] Client connected to STT (Sarvam Proxy)');
+
+        // Connect to Sarvam STT
+        // Ensure language-code matches what frontend expects or defaults to 'hi-IN'
+        const language = url.searchParams.get('language') || 'hi-IN';
+        const sarvamSttUrl = `wss://api.sarvam.ai/speech-to-text/ws?language-code=${language}&model=saarika%3Av2.5&vad_signals=true&sample_rate=16000`;
+
+        const apiKey = process.env.SARVAM_API_KEY;
+        if (!apiKey) {
+          console.error('[Sarvam STT] Missing SARVAM_API_KEY');
+          clientWs.close(1008, 'Server missing Sarvam API Key');
+          return;
         }
-      });
 
-      clientWs.on('close', () => {
-        console.log('[Voice] Client disconnected');
-      });
+        const sarvamWs = new WS(sarvamSttUrl, {
+          headers: { 'Api-Subscription-Key': apiKey }
+        });
 
-      clientWs.on('error', (err: any) => {
-        console.error('[Voice] WebSocket error:', err);
-      });
+        // 1. Forward Microphone Audio: Client -> Sarvam
+        clientWs.on('message', (data: Buffer) => {
+          if (sarvamWs.readyState === WS.OPEN) {
+            sarvamWs.send(data);
+          }
+        });
+
+        // 2. Forward Transcripts: Sarvam -> Client
+        sarvamWs.on('message', (data: Buffer) => {
+          if (clientWs.readyState === WS.OPEN) {
+            clientWs.send(data);
+          }
+        });
+
+        // Log Sarvam STT Errors
+        sarvamWs.on('error', (e: Error) => {
+          console.error('[Sarvam STT] Error:', e.message);
+        });
+
+        // Cleanup
+        clientWs.on('close', () => {
+          console.log('[Voice] STT Client disconnected');
+          sarvamWs.close();
+        });
+        sarvamWs.on('close', () => clientWs.close());
+      }
     }
 
     // Setup Vite or serve static files
@@ -271,7 +309,7 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
       console.log(`[Server] ✅ Frontend server listening on port ${port}`);
       console.log(`[Server] 🔄 Supabase API routes integrated`);
       console.log(`[Server] 🔄 Chat API routes integrated`);
-      console.log(`[Server] 🔄 Voice Proxy enabled on /api/sarvam/ws/proxy (powered by Deepgram)`);
+      console.log(`[Server] 🔄 Voice Proxy enabled on /api/sarvam/ws/proxy (powered by Deepgram TTS + Sarvam STT)`);
 
       // Initialize reminder scheduler
       initializeReminderScheduler();
