@@ -22,7 +22,7 @@
   "dependencies": {
     "@amplitude/analytics-browser": "^2.31.3",
     "@amplitude/analytics-node": "^1.5.26",
-    "@deepgram/sdk": "^4.11.2",
+    "@deepgram/sdk": "^4.11.3",
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
