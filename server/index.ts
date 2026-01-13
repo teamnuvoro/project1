@@ -247,15 +247,10 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
 
             // Build config message matching documentation exactly
             // Ensure all values are properly typed (no undefined/null)
+            // DEBUG: Sending MINIMAL config to fix 422 error
             const configData: Record<string, any> = {
-              speaker: speakerValue,
-              target_language_code: languageValue,
-              pitch: 0.8,
-              pace: 1.0,
-              min_buffer_size: 10,
-              max_chunk_length: 200,
-              output_audio_codec: "mp3",
-              output_audio_bitrate: "128k"
+              speaker: "anushka", // Hardcoded valid ID for testing
+              target_language_code: "hi-IN"
             };
 
             // Remove any undefined/null values
