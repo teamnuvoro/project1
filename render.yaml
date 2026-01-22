@@ -3,7 +3,7 @@ services:
     name: riya-ai-companion
     env: node
     plan: starter
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && npm run build && npm run build:server
     startCommand: npm run start
     envVars:
       - key: NODE_ENV
