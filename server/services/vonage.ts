@@ -56,6 +56,10 @@ export function normalizePhoneNumber(phone: string): string {
  * @returns request_id from Vonage (used for verification)
  */
 export async function sendOTP(phoneNumber: string): Promise<string> {
+  if (!vonage) {
+    throw new Error('Vonage SDK not available. Please install @vonage/server-sdk');
+  }
+  
   if (!process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
     throw new Error('Vonage API credentials not configured');
   }
@@ -104,6 +108,10 @@ export async function sendOTP(phoneNumber: string): Promise<string> {
  * @returns true if valid, false if invalid
  */
 export async function verifyOTP(requestId: string, code: string): Promise<boolean> {
+  if (!vonage) {
+    throw new Error('Vonage SDK not available. Please install @vonage/server-sdk');
+  }
+  
   if (!process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
     throw new Error('Vonage API credentials not configured');
   }
@@ -151,6 +159,11 @@ export async function verifyOTP(requestId: string, code: string): Promise<boolea
  * Useful if user requests a new OTP before verifying the old one
  */
 export async function cancelOTP(requestId: string): Promise<void> {
+  if (!vonage) {
+    console.warn('[Vonage] SDK not available, cannot cancel OTP');
+    return;
+  }
+  
   try {
     await vonage.verify.cancel(requestId);
     console.log('[Vonage] OTP cancelled, request_id:', requestId);
