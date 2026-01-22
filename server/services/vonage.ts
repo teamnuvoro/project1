@@ -5,13 +5,24 @@
  * All secrets are server-side only - never exposed to client
  */
 
-import { Vonage } from '@vonage/server-sdk';
+// Lazy import Vonage to avoid build issues
+let VonageClass: any = null;
+let vonage: any = null;
 
-// Initialize Vonage client (server-side only)
-const vonage = new Vonage({
-  apiKey: process.env.VONAGE_API_KEY || '',
-  apiSecret: process.env.VONAGE_API_SECRET || '',
-});
+try {
+  const vonageModule = require('@vonage/server-sdk');
+  VonageClass = vonageModule.Vonage || vonageModule.default?.Vonage || vonageModule.default;
+  
+  if (VonageClass) {
+    vonage = new VonageClass({
+      apiKey: process.env.VONAGE_API_KEY || '',
+      apiSecret: process.env.VONAGE_API_SECRET || '',
+    });
+  }
+} catch (error) {
+  console.warn('[Vonage] @vonage/server-sdk not available. OTP features will be disabled.');
+  console.warn('[Vonage] Error:', error.message);
+}
 
 /**
  * Normalize phone number to E.164 format
