@@ -1,11 +1,23 @@
-import DodoPayments from 'dodopayments';
 import { supabase } from '../supabase';
 
-// Initialize Dodo Payments SDK
-const dodo = new DodoPayments({
-  bearerToken: process.env.DODO_PAYMENTS_API_KEY || '',
-  environment: process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode',
-});
+// Lazy import DodoPayments to avoid build issues
+let DodoPaymentsClass: any = null;
+let dodo: any = null;
+
+try {
+  const dodoModule = require('dodopayments');
+  DodoPaymentsClass = dodoModule.default || dodoModule;
+  
+  if (DodoPaymentsClass) {
+    dodo = new DodoPaymentsClass({
+      bearerToken: process.env.DODO_PAYMENTS_API_KEY || '',
+      environment: process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode',
+    });
+  }
+} catch (error: any) {
+  console.warn('[Dodo] dodopayments package not available. Payment features will be disabled.');
+  console.warn('[Dodo] Error:', error.message);
+}
 
 export interface CreateCheckoutSessionParams {
   userId: string;
