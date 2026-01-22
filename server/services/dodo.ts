@@ -42,6 +42,10 @@ export interface CheckoutSessionResponse {
 export async function createDodoCheckoutSession(
   params: CreateCheckoutSessionParams
 ): Promise<CheckoutSessionResponse> {
+  if (!dodo) {
+    throw new Error('Dodo Payments SDK not available. Please install dodopayments package');
+  }
+  
   const { userId, planType, amount, userEmail, userName, returnUrl, orderId } = params;
 
   // Validate API key
@@ -162,6 +166,10 @@ export async function createDodoCheckoutSession(
  * Verify webhook signature and unwrap event
  */
 export function verifyDodoWebhook(rawBody: string, headers: Record<string, string | string[] | undefined>): any {
+  if (!dodo) {
+    throw new Error('Dodo Payments SDK not available. Please install dodopayments package');
+  }
+  
   if (!process.env.DODO_WEBHOOK_SECRET) {
     throw new Error('DODO_WEBHOOK_SECRET is not configured');
   }
@@ -179,4 +187,4 @@ export function verifyDodoWebhook(rawBody: string, headers: Record<string, strin
   }
 }
 
-export default dodo;
+export default dodo; // May be null if package not available
