@@ -3,13 +3,21 @@ services:
     name: riya-ai-companion
     env: node
     plan: starter
-    buildCommand: npm install && npm run build:all
-    startCommand: npm run start:server
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
-      # Add your environment variables here or in Render dashboard
-      # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, etc.
+      # IMPORTANT: Add these environment variables in Render Dashboard:
+      # - DODO_PAYMENTS_API_KEY
+      # - DODO_ENV=live_mode
+      # - DODO_WEBHOOK_SECRET
+      # - DODO_PRODUCT_ID_MONTHLY
+      # - DODO_WEBHOOK_URL (your Render URL)
+      # - BASE_URL (your Render URL)
+      # - PAYMENT_RETURN_URL (your Render URL)
+      # - SUPABASE_URL
+      # - SUPABASE_SERVICE_ROLE_KEY
 
