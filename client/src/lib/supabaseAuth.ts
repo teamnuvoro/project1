@@ -6,6 +6,18 @@
 
 import { supabase } from './supabase';
 
+// Test phone numbers with fixed OTPs (for development/testing)
+// These work with Supabase test phone numbers feature
+// Format in Supabase Dashboard: 1234567890=123456
+const TEST_PHONE_NUMBERS: Record<string, string> = {
+  '1234567890': '123456',
+  '+911234567890': '123456',
+  '911234567890': '123456',
+  '+919999999999': '123456',
+  '919999999999': '123456',
+  '9999999999': '123456',
+};
+
 /**
  * Normalize phone number to E.164 format
  */
@@ -30,14 +42,49 @@ export function normalizePhoneNumber(phone: string): string {
  */
 export async function sendOTP(phoneNumber: string, metadata?: { name?: string; email?: string }): Promise<void> {
   const normalized = normalizePhoneNumber(phoneNumber);
+  const cleanedInput = phoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  
+  // Check if this is a test phone number
+  const isTestPhone = TEST_PHONE_NUMBERS[cleanedInput] || 
+                      TEST_PHONE_NUMBERS[normalized] ||
+                      TEST_PHONE_NUMBERS[phoneNumber.replace(/\s+/g, '')];
+  
+  if (isTestPhone) {
+    console.log('[Supabase Auth] 🧪 Test phone detected:', phoneNumber, 'Fixed OTP:', isTestPhone);
+  }
   
   console.log('[Supabase Auth] Sending OTP to:', normalized);
+  console.log('[Supabase Auth] Original phone:', phoneNumber);
   console.log('[Supabase Auth] Metadata:', metadata);
   
+  // Store normalized phone in localStorage for verification
+  // For test phones, also store the raw input
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('last_otp_phone', normalized);
+    localStorage.setItem('last_otp_time', Date.now().toString());
+    if (isTestPhone) {
+      localStorage.setItem('last_otp_phone_raw', phoneNumber.replace(/\s+/g, ''));
+      console.log('[Supabase Auth] Stored test phone for verification');
+    }
+  }
+  
+  // For test phones, try multiple formats when sending
+  // Supabase test phones need to match exactly what's in the dashboard
+  const phoneToSend = isTestPhone ? [
+    phoneNumber.replace(/\s+/g, ''), // Raw input (most likely to match Supabase test config)
+    cleanedInput, // Cleaned
+    normalized, // Normalized
+    '1234567890', // Exact test number
+    '+911234567890', // With country code
+  ].find(p => p) || normalized : normalized;
+  
+  console.log('[Supabase Auth] Using phone format for send:', phoneToSend);
+  
   const { data, error } = await supabase.auth.signInWithOtp({
-    phone: normalized,
+    phone: phoneToSend,
     options: {
       data: metadata || {},
+      channel: 'sms', // Explicitly use SMS channel
     },
   });
   
@@ -90,6 +137,22 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
     throw new Error('OTP code must be exactly 6 digits');
   }
   
+  // Check if this is a test phone number
+  const cleanedInput = phoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  const normalizedForTest = normalizePhoneNumber(phoneNumber);
+  const testPhoneKey = cleanedInput || normalizedForTest || phoneNumber;
+  
+  // Check all possible test phone formats
+  const isTestPhone = TEST_PHONE_NUMBERS[testPhoneKey] || 
+                      TEST_PHONE_NUMBERS[normalizedForTest] ||
+                      TEST_PHONE_NUMBERS[cleanedInput] ||
+                      TEST_PHONE_NUMBERS[phoneNumber];
+  
+  if (isTestPhone && cleanOtp === isTestPhone) {
+    console.log('[Supabase Auth] 🧪 Test phone detected:', testPhoneKey, 'OTP:', cleanOtp);
+    // For test phones, we still need to verify with Supabase, but we'll try all formats
+  }
+  
   // Get the phone number used when sending OTP (from localStorage)
   let phoneToUse = phoneNumber;
   if (typeof window !== 'undefined') {
@@ -100,7 +163,8 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
       const timeSinceOtp = Date.now() - parseInt(lastOtpTime);
       const OTP_EXPIRY = 5 * 60 * 1000; // 5 minutes
       
-      if (timeSinceOtp > OTP_EXPIRY) {
+      // Don't expire test phone OTPs
+      if (!isTestPhone && timeSinceOtp > OTP_EXPIRY) {
         localStorage.removeItem('last_otp_phone');
         localStorage.removeItem('last_otp_time');
         throw new Error('OTP has expired. Please request a new one.');
@@ -123,8 +187,18 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
   console.log('[Supabase Auth] OTP code:', cleanOtp);
   console.log('[Supabase Auth] Original phone provided:', phoneNumber);
   
-  // Try multiple phone number formats in case of normalization mismatch
-  const phoneVariants = [
+  // For test phones, try ALL possible formats including the raw input
+  const phoneVariants = isTestPhone ? [
+    phoneNumber.replace(/\s+/g, ''), // Raw input without spaces
+    cleanedInput, // Cleaned input
+    normalized, // Normalized with +91
+    phoneToUse, // Stored phone
+    normalized.replace(/^\+91/, '91'), // Without + but with 91
+    normalized.replace(/^\+91/, ''), // Without country code
+    '1234567890', // Exact test number
+    '+911234567890', // With country code
+    '911234567890', // With 91 prefix
+  ] : [
     normalized, // Original normalized (most likely to work)
     phoneToUse, // Use stored phone if available
     normalized.replace(/^\+91/, '91'), // Without + but with 91
@@ -133,7 +207,7 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
   ];
   
   // Remove duplicates
-  const uniqueVariants = [...new Set(phoneVariants)];
+  const uniqueVariants = [...new Set(phoneVariants.filter(v => v))];
   
   let lastError: any = null;
   
