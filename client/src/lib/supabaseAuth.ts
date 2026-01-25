@@ -83,41 +83,119 @@ export async function sendOTP(phoneNumber: string, metadata?: { name?: string; e
  * Verify OTP code using Supabase
  */
 export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{ session: any; user: any }> {
-  const normalized = normalizePhoneNumber(phoneNumber);
+  // Clean OTP code (remove spaces, ensure it's 6 digits)
+  const cleanOtp = otpCode.replace(/\s+/g, '').trim();
+  
+  if (cleanOtp.length !== 6 || !/^\d{6}$/.test(cleanOtp)) {
+    throw new Error('OTP code must be exactly 6 digits');
+  }
+  
+  // Get the phone number used when sending OTP (from localStorage)
+  let phoneToUse = phoneNumber;
+  if (typeof window !== 'undefined') {
+    const lastOtpPhone = localStorage.getItem('last_otp_phone');
+    const lastOtpTime = localStorage.getItem('last_otp_time');
+    
+    if (lastOtpPhone && lastOtpTime) {
+      const timeSinceOtp = Date.now() - parseInt(lastOtpTime);
+      const OTP_EXPIRY = 5 * 60 * 1000; // 5 minutes
+      
+      if (timeSinceOtp > OTP_EXPIRY) {
+        localStorage.removeItem('last_otp_phone');
+        localStorage.removeItem('last_otp_time');
+        throw new Error('OTP has expired. Please request a new one.');
+      }
+      
+      // Use the exact phone number that was used to send OTP
+      phoneToUse = lastOtpPhone;
+      console.log('[Supabase Auth] Using stored phone from OTP send:', phoneToUse);
+    } else {
+      // Fallback to normalizing the provided phone
+      phoneToUse = normalizePhoneNumber(phoneNumber);
+    }
+  } else {
+    phoneToUse = normalizePhoneNumber(phoneNumber);
+  }
+  
+  const normalized = normalizePhoneNumber(phoneToUse);
   
   console.log('[Supabase Auth] Verifying OTP for:', normalized);
+  console.log('[Supabase Auth] OTP code:', cleanOtp);
+  console.log('[Supabase Auth] Original phone provided:', phoneNumber);
   
-  const { data, error } = await supabase.auth.verifyOtp({
-    phone: normalized,
-    token: otpCode,
-    type: 'sms',
-  });
+  // Try multiple phone number formats in case of normalization mismatch
+  const phoneVariants = [
+    normalized, // Original normalized (most likely to work)
+    phoneToUse, // Use stored phone if available
+    normalized.replace(/^\+91/, '91'), // Without + but with 91
+    normalized.replace(/^\+91/, ''), // Without country code
+    phoneNumber.replace(/\s+/g, ''), // Original without spaces
+  ];
   
-  if (error) {
-    console.error('[Supabase Auth] Verify OTP error:', error);
-    
+  // Remove duplicates
+  const uniqueVariants = [...new Set(phoneVariants)];
+  
+  let lastError: any = null;
+  
+  // Try each phone format variant
+  for (const phoneVariant of uniqueVariants) {
+    try {
+      console.log('[Supabase Auth] Trying phone variant:', phoneVariant);
+      
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: phoneVariant,
+        token: cleanOtp,
+        type: 'sms',
+      });
+      
+      if (error) {
+        lastError = error;
+        console.warn('[Supabase Auth] Verification failed for variant:', phoneVariant, error.message);
+        continue; // Try next variant
+      }
+      
+      if (!data.session) {
+        throw new Error('No session returned from verification');
+      }
+      
+      console.log('[Supabase Auth] ✅ OTP verified successfully with variant:', phoneVariant);
+      
+      // Clear stored OTP data on success
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('last_otp_phone');
+        localStorage.removeItem('last_otp_time');
+      }
+      
+      return {
+        session: data.session,
+        user: data.user,
+      };
+    } catch (err: any) {
+      lastError = err;
+      console.warn('[Supabase Auth] Error with variant:', phoneVariant, err.message);
+      continue;
+    }
+  }
+  
+  // All variants failed - provide helpful error message
+  console.error('[Supabase Auth] ❌ All verification attempts failed. Last error:', lastError);
+  
+  if (lastError) {
     // Provide more specific error messages
-    if (error.status === 403) {
+    if (lastError.status === 403) {
       throw new Error('Phone authentication is not enabled or SMS provider is not configured. Please check your Supabase settings.');
-    } else if (error.message?.includes('Invalid token') || error.message?.includes('expired')) {
-      throw new Error('OTP code has expired or is invalid. Please request a new one.');
-    } else if (error.message?.includes('not found')) {
-      throw new Error('No OTP request found. Please request a new OTP.');
+    } else if (lastError.message?.includes('Invalid token') || lastError.message?.includes('expired') || lastError.message?.includes('Token has expired') || lastError.message?.includes('has expired')) {
+      throw new Error('OTP code has expired. Please request a new one.');
+    } else if (lastError.message?.includes('not found') || lastError.message?.includes('No such')) {
+      throw new Error('No OTP request found for this phone number. Please request a new OTP.');
+    } else if (lastError.message?.includes('invalid') || lastError.message?.includes('Invalid')) {
+      throw new Error('Invalid OTP code. Please check and try again.');
     }
     
-    throw new Error(error.message || 'Failed to verify OTP');
+    throw new Error(lastError.message || 'Failed to verify OTP. Please request a new code.');
   }
   
-  if (!data.session) {
-    throw new Error('No session returned from verification');
-  }
-  
-  console.log('[Supabase Auth] OTP verified successfully');
-  
-  return {
-    session: data.session,
-    user: data.user,
-  };
+  throw new Error('Failed to verify OTP. Please request a new code.');
 }
 
 /**
