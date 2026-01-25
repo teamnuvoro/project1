@@ -41,8 +41,8 @@ export function normalizePhoneNumber(phone: string): string {
  * Send OTP to phone number using Supabase
  */
 export async function sendOTP(phoneNumber: string, metadata?: { name?: string; email?: string }): Promise<void> {
-  const normalized = normalizePhoneNumber(phoneNumber);
   const cleanedInput = phoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  const normalized = normalizePhoneNumber(phoneNumber);
   
   // Check if this is a test phone number
   const isTestPhone = TEST_PHONE_NUMBERS[cleanedInput] || 
@@ -55,28 +55,40 @@ export async function sendOTP(phoneNumber: string, metadata?: { name?: string; e
   
   console.log('[Supabase Auth] Sending OTP to:', normalized);
   console.log('[Supabase Auth] Original phone:', phoneNumber);
+  console.log('[Supabase Auth] Cleaned input:', cleanedInput);
   console.log('[Supabase Auth] Metadata:', metadata);
   
-  // Store normalized phone in localStorage for verification
-  // For test phones, also store the raw input
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('last_otp_phone', normalized);
-    localStorage.setItem('last_otp_time', Date.now().toString());
-    if (isTestPhone) {
-      localStorage.setItem('last_otp_phone_raw', phoneNumber.replace(/\s+/g, ''));
-      console.log('[Supabase Auth] Stored test phone for verification');
+  // For test phones, Supabase requires EXACT format match
+  // If Supabase has "1234567890=123456", we MUST send "1234567890" (not +911234567890)
+  // Try raw format FIRST for test phones
+  let phoneToSend = normalized;
+  if (isTestPhone) {
+    // For test phones, use the raw 10-digit format (matches Supabase test config)
+    const rawTestPhone = cleanedInput.replace(/^\+?91/, '').replace(/^\+/, '');
+    if (rawTestPhone.length === 10) {
+      phoneToSend = rawTestPhone;
+      console.log('[Supabase Auth] 🧪 Using raw test phone format:', phoneToSend);
+    } else {
+      // Fallback to cleaned input
+      phoneToSend = cleanedInput.replace(/^\+/, '');
+      console.log('[Supabase Auth] 🧪 Using cleaned test phone format:', phoneToSend);
     }
   }
   
-  // For test phones, try multiple formats when sending
-  // Supabase test phones need to match exactly what's in the dashboard
-  const phoneToSend = isTestPhone ? [
-    phoneNumber.replace(/\s+/g, ''), // Raw input (most likely to match Supabase test config)
-    cleanedInput, // Cleaned
-    normalized, // Normalized
-    '1234567890', // Exact test number
-    '+911234567890', // With country code
-  ].find(p => p) || normalized : normalized;
+  // Store phone in localStorage for verification
+  if (typeof window !== 'undefined') {
+    // Store both formats for test phones
+    localStorage.setItem('last_otp_phone', phoneToSend);
+    localStorage.setItem('last_otp_phone_normalized', normalized);
+    localStorage.setItem('last_otp_time', Date.now().toString());
+    if (isTestPhone) {
+      localStorage.setItem('last_otp_phone_raw', cleanedInput.replace(/^\+/, ''));
+      localStorage.setItem('is_test_phone', 'true');
+      console.log('[Supabase Auth] Stored test phone formats for verification');
+    } else {
+      localStorage.removeItem('is_test_phone');
+    }
+  }
   
   console.log('[Supabase Auth] Using phone format for send:', phoneToSend);
   
@@ -155,6 +167,8 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
   
   // Get the phone number used when sending OTP (from localStorage)
   let phoneToUse = phoneNumber;
+  const isStoredTestPhone = typeof window !== 'undefined' && localStorage.getItem('is_test_phone') === 'true';
+  
   if (typeof window !== 'undefined') {
     const lastOtpPhone = localStorage.getItem('last_otp_phone');
     const lastOtpTime = localStorage.getItem('last_otp_time');
@@ -164,7 +178,7 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
       const OTP_EXPIRY = 5 * 60 * 1000; // 5 minutes
       
       // Don't expire test phone OTPs
-      if (!isTestPhone && timeSinceOtp > OTP_EXPIRY) {
+      if (!isTestPhone && !isStoredTestPhone && timeSinceOtp > OTP_EXPIRY) {
         localStorage.removeItem('last_otp_phone');
         localStorage.removeItem('last_otp_time');
         throw new Error('OTP has expired. Please request a new one.');
@@ -186,19 +200,25 @@ export async function verifyOTP(phoneNumber: string, otpCode: string): Promise<{
   console.log('[Supabase Auth] Verifying OTP for:', normalized);
   console.log('[Supabase Auth] OTP code:', cleanOtp);
   console.log('[Supabase Auth] Original phone provided:', phoneNumber);
+  console.log('[Supabase Auth] Is test phone:', isTestPhone || isStoredTestPhone);
   
-  // For test phones, try ALL possible formats including the raw input
-  const phoneVariants = isTestPhone ? [
-    phoneNumber.replace(/\s+/g, ''), // Raw input without spaces
-    cleanedInput, // Cleaned input
-    normalized, // Normalized with +91
-    phoneToUse, // Stored phone
-    normalized.replace(/^\+91/, '91'), // Without + but with 91
-    normalized.replace(/^\+91/, ''), // Without country code
+  // For test phones, Supabase requires EXACT format match
+  // If Supabase has "1234567890=123456", we MUST verify with "1234567890" (not +911234567890)
+  // Try raw 10-digit format FIRST
+  const phoneVariants = (isTestPhone || isStoredTestPhone) ? [
+    // Raw 10-digit format (MOST IMPORTANT - matches Supabase test config)
+    cleanedInput.replace(/^\+?91/, '').replace(/^\+/, ''),
+    phoneToUse, // Stored phone (should be raw format)
+    typeof window !== 'undefined' ? localStorage.getItem('last_otp_phone_raw') || '' : '',
     '1234567890', // Exact test number
+    cleanedInput.replace(/^\+/, ''), // Without +
+    phoneNumber.replace(/\s+/g, '').replace(/^\+?91/, ''), // Raw from input
+    // Then try with country code variants
+    normalized, // Normalized with +91
+    normalized.replace(/^\+91/, '91'), // Without + but with 91
     '+911234567890', // With country code
     '911234567890', // With 91 prefix
-  ] : [
+  ].filter(v => v && v.length > 0) : [
     normalized, // Original normalized (most likely to work)
     phoneToUse, // Use stored phone if available
     normalized.replace(/^\+91/, '91'), // Without + but with 91
