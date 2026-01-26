@@ -37,10 +37,8 @@ app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Root health check for Render
-app.get("/", (_req, res) => {
-  res.status(200).json({ status: "ok", service: "riya-ai" });
-});
+// Root route - will be handled by static file serving in production
+// Health check is at /api/health instead
 
 // =====================================================
 // CORS CONFIGURATION - MUST BE BEFORE BODY PARSERS
