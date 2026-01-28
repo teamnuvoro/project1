@@ -115,6 +115,35 @@ app.use((req, res, next) => {
   next();
 });
 
+// =========================================================
+// FIREBASE AUTH (single source of truth)
+// - Frontend sends Firebase ID token in Authorization header
+// - Backend verifies token and sets req.firebaseUser
+// - resolveFirebaseUser maps firebase UID -> internal userId and sets req.session
+// =========================================================
+import { requireFirebaseAuth } from "./middleware/requireFirebaseAuth";
+import { resolveFirebaseUser } from "./middleware/resolveFirebaseUser";
+app.use("/api", (req, res, next) => {
+  if (
+    req.path === "/health" ||
+    req.path === "/health/detailed" ||
+    req.path === "/payment/webhook"
+  ) {
+    return next();
+  }
+  return requireFirebaseAuth(req, res, next);
+});
+app.use("/api", (req, res, next) => {
+  if (
+    req.path === "/health" ||
+    req.path === "/health/detailed" ||
+    req.path === "/payment/webhook"
+  ) {
+    return next();
+  }
+  return resolveFirebaseUser(req, res, next);
+});
+
 // Authentication routes (OTP-based signup/login)
 // Detailed health check endpoint (for debugging)
 app.get("/api/health/detailed", (req, res) => {
@@ -191,10 +220,14 @@ app.patch("/api/user/personality", async (req, res) => {
   }
 });
 
-// Auth session endpoint
+// GET /api/auth/session — return current session when authenticated (Firebase)
 app.get("/api/auth/session", async (req, res) => {
   try {
-    res.status(401).json({ error: "Authentication required" });
+    const session = (req as any).session as { userId?: string; firebaseUid?: string } | undefined;
+    if (!session?.userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    res.json({ ok: true, userId: session.userId, firebaseUid: session.firebaseUid });
   } catch (error: any) {
     console.error("[/api/auth/session] Error:", error);
     res.status(500).json({ error: "Failed to get session" });

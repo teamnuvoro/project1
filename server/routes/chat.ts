@@ -229,7 +229,7 @@ async function incrementMessageCount(userId: string): Promise<void> {
 
 router.post("/api/session", async (req: Request, res: Response) => {
   try {
-    const { userId } = req.body;
+    const userId = (req as any).session?.userId ?? req.body?.userId;
 
     if (!userId) {
       return res.status(400).json({ error: "User ID is required" });
@@ -360,7 +360,7 @@ router.post("/api/session", async (req: Request, res: Response) => {
 router.get("/api/messages", async (req: Request, res: Response) => {
   try {
     const sessionId = req.query.sessionId as string;
-    const userId = req.query.userId as string; // Optional: for fallback
+    const userId = (req as any).session?.userId ?? (req.query.userId as string); // Optional: for fallback
 
     if (!sessionId) {
       return res.json([]);
@@ -490,7 +490,8 @@ router.get("/api/messages", async (req: Request, res: Response) => {
 
 router.post("/api/chat", async (req: Request, res: Response) => {
   try {
-    const { content, sessionId, userId, persona_id } = req.body;
+    const userId = (req as any).session?.userId ?? req.body?.userId;
+    const { content, sessionId, persona_id } = req.body;
     
     // Log the incoming request for debugging
     console.log(`[POST /api/chat] Request received - userId: ${userId}, sessionId: ${sessionId?.substring(0, 8)}...`);

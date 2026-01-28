@@ -1,5 +1,6 @@
 import { createContext, useContext, ReactNode, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { analytics } from "@/lib/analytics";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -24,7 +25,6 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (user: User) => void;
   logout: () => void;
   refetchUser: () => Promise<void>;
   isAuthenticated: boolean;
@@ -44,99 +44,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchProfile(session.user.id, session.user);
-      } else {
+    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      try {
+        if (!fbUser) {
+          setUser(null);
+          setIsLoading(false);
+          queryClient.clear();
+          return;
+        }
+
+        const token = await fbUser.getIdToken();
+        // Tell backend to ensure profile exists + get internal userId mapping
+        const resp = await fetch("/api/auth/session", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const sessionInfo = await resp.json().catch(() => ({}));
+
+        const nextUser: User = {
+          id: sessionInfo.userId || fbUser.uid, // internal uuid if available, else fallback
+          firebase_uid: fbUser.uid,
+          name: fbUser.displayName || sessionInfo.name || "User",
+          email: fbUser.email || sessionInfo.email || "",
+        };
+
+        setUser(nextUser);
+        analytics.identifyUser(fbUser.uid, {
+          email: nextUser.email,
+        });
+      } finally {
         setIsLoading(false);
       }
     });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session?.user) {
-          fetchProfile(session.user.id, session.user);
-        } else {
-          setUser(null);
-          setIsLoading(false);
-          queryClient.clear();
-        }
-      }
-    );
-
-    return () => subscription.unsubscribe();
+    return () => unsub();
   }, []);
-
-  const fetchProfile = async (userId: string, sessionUser?: any) => {
-    try {
-      // Use maybeSingle() to avoid 406 Error if row is missing/hidden
-      // Always fetch fresh data from database
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) {
-        console.warn('Error fetching user profile (DB):', error.message);
-      }
-
-      if (data) {
-        setUser(data as User);
-        // Identify in analytics
-        analytics.identifyUser(data.id, {
-          name: data.name,
-          email: data.email,
-          gender: data.gender,
-          premium: data.premium_user,
-        });
-      } else if (sessionUser) {
-        // Fallback: Construct user from Session Metadata if DB is inaccessible (RLS or missing)
-        // This is normal if user doesn't exist in DB yet or RLS is blocking - not an error
-        const metadata = sessionUser.user_metadata || {};
-
-        const fallbackUser: User = {
-          id: sessionUser.id,
-          name: metadata.name || sessionUser.email?.split('@')[0] || 'User',
-          email: sessionUser.email || '',
-          phone_number: sessionUser.phone || metadata.phone_number,
-          gender: metadata.gender || 'prefer_not_to_say',
-          persona: metadata.persona || 'sweet_supportive',
-          premium_user: false, // Default to false if we can't check DB
-          onboarding_complete: true,
-          created_at: sessionUser.created_at,
-          updated_at: sessionUser.last_sign_in_at || new Date().toISOString()
-        };
-
-        setUser(fallbackUser);
-      } else {
-        // No data and no session user to fall back on
-        console.error('Profile missing and no session metadata available.');
-        setUser(null);
-      }
-    } catch (error) {
-      console.error('Exception fetching profile:', error);
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const login = (userData: User) => {
-    setUser(userData);
-    analytics.track("login_completed", { method: "manual" });
-  };
 
   const refetchUser = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        // Force fresh fetch by clearing query cache first
-        queryClient.invalidateQueries({ queryKey: ['user', session.user.id] });
-        await fetchProfile(session.user.id, session.user);
-      }
+      const fbUser = auth.currentUser;
+      if (!fbUser) return;
+      const token = await fbUser.getIdToken(true);
+      await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
     } catch (error) {
       console.error('Error refetching user:', error);
     }
@@ -148,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       analytics.track("logout");
       analytics.reset();
 
-      await supabase.auth.signOut();
+      await signOut(auth);
 
       queryClient.clear();
       sessionStorage.clear();
@@ -165,7 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        login,
         logout,
         refetchUser,
         isAuthenticated: !!user,

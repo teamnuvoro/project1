@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { createDodoCheckoutSession, verifyDodoWebhook } from '../services/dodo';
 import { supabase, isSupabaseConfigured } from '../supabase';
-import { getDodoPlanConfig } from '../config';
+import { getDodoPlanConfig, getCashfreeBaseUrl } from '../config';
 import crypto from 'crypto';
 import { IS_PRODUCTION, validateUserIdForProduction, isBackdoorUserAllowed } from '../utils/productionChecks';
 
@@ -154,7 +154,10 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
     }
 
     // This is the critical fix. We must have a record to verify against later.
-        if (isSupabaseConfigured && isValidUUID) {
+    // In dev, skip subscription insert for the known dev user ID (not in auth.users) to avoid FK violation.
+    const isDevBackdoorUser = !IS_PRODUCTION && userId === DEV_USER_ID;
+    let subscriptionSkippedFk = false; // set when 23503: subscriptions ref auth.users, we use public.users
+    if (isSupabaseConfigured && isValidUUID && !isDevBackdoorUser) {
           const startDate = new Date();
           const endDate = new Date();
           endDate.setMonth(endDate.getMonth() + 1); // Add 1 month
@@ -204,16 +207,23 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
           } else {
             throw new Error(`Database Error: Could not create subscription record. ${insertError.message}`);
           }
+        } else if (insertError.code === '23503') {
+          // Foreign key violation: subscriptions.user_id references auth.users(id), but we use Firebase → public.users.
+          subscriptionSkippedFk = true;
+          console.warn("⚠️ Subscription insert FK violation (user in public.users, subscriptions ref auth.users). Skipping subscription insert; continuing with checkout.");
         } else {
           throw new Error(`Database Error: Could not create subscription record. ${insertError.message || insertError.code || 'Unknown error'}`);
         }
       } else {
         console.log("✅ Pending Subscription Created for User:", userId, "Subscription ID:", insertedSubscription?.id);
       }
+    } else if (isDevBackdoorUser) {
+      console.warn(`⚠️ Dev mode: Skipping subscription insert for dev user ${userId} (not in auth.users)`);
+      console.warn("⚠️ Payment order will still be created; checkout URL will work for testing.");
     } else if (!isValidUUID && !IS_PRODUCTION) {
       console.warn(`⚠️ Dev mode: Skipping subscription insert for non-UUID user: ${userId}`);
       console.warn("⚠️ Payment order will still be created, but subscription won't be tracked in database");
-    } else {
+    } else if (!subscriptionSkippedFk) {
       console.warn("⚠️ Database NOT configured. Skipping subscription insert.");
     }
 

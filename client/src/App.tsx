@@ -20,8 +20,8 @@ import LandingPage from "@/pages/LandingPage";
 import AdminAnalytics from "@/pages/AdminAnalytics";
 import UserJourneyPage from "@/pages/UserJourneyPage";
 
-import SignupPage from "@/pages/SignupPage";
 import LoginPage from "@/pages/LoginPage";
+import SignupPage from "@/pages/SignupPage";
 import NotFound from "@/pages/not-found";
 import { analytics } from "@/lib/analytics";
 
@@ -74,8 +74,11 @@ function Router() {
   const content = (
     <Switch>
       {/* ----------------------------------------------------------------- */}
-      {/* 🟢 PUBLIC ZONE (Auth Routes) */}
+      {/* 🟢 PUBLIC ZONE — specific paths FIRST so "/" doesn't steal /signup or /login */}
       {/* ----------------------------------------------------------------- */}
+      <Route path="/signup" component={SignupPage} />
+      <Route path="/login" component={LoginPage} />
+      <Route path="/landingpage" component={LandingPage} />
       <Route path="/">
         {() => {
           const { isLoading } = useAuth();
@@ -90,9 +93,6 @@ function Router() {
           return <Redirect to="/chat" />;
         }}
       </Route>
-      <Route path="/landingpage" component={LandingPage} />
-      <Route path="/signup" component={SignupPage} />
-      <Route path="/login" component={LoginPage} />
 
       {/* ----------------------------------------------------------------- */}
       {/* 🔒 PROTECTED ZONE (The Vault) */}
@@ -157,24 +157,16 @@ function App() {
     // Initialize custom analytics
     analytics.initialize();
 
-    // Global click tracker
+    // Global click tracker — skip inputs/forms on auth pages so focus isn't disturbed
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      // Try to find a meaningful name or ID
+      const path = window.location.pathname;
+      if (path === '/login' || path === '/signup') return;
+      const tagName = target.tagName;
       const elementId = target.id || target.getAttribute('data-testid');
       const elementText = target.innerText?.substring(0, 50);
-      const tagName = target.tagName;
-
-      // Only track clicks on interactive elements or if they have an ID
       if (['BUTTON', 'A', 'INPUT', 'SELECT'].includes(tagName) || elementId || target.closest('button') || target.closest('a')) {
-        analytics.track('click', {
-          elementId,
-          elementText,
-          tagName,
-          x: e.clientX,
-          y: e.clientY,
-          path: window.location.pathname
-        });
+        analytics.track('click', { elementId, elementText, tagName, x: e.clientX, y: e.clientY, path });
       }
     };
 

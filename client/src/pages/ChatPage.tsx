@@ -17,6 +17,7 @@ import { analytics } from "@/lib/analytics";
 import { useLocation, Link } from "wouter";
 import { FeedbackModal } from "@/components/FeedbackModal";
 import { Phone } from "lucide-react";
+import { auth } from "@/lib/firebase";
 import {
   trackChatOpened,
   trackMessageSent,
@@ -116,7 +117,7 @@ export default function ChatPage() {
   const { data: session, isLoading: isSessionLoading, refetch: refetchSession } = useQuery<Session>({
     queryKey: ["session", user?.id],
     queryFn: async () => {
-      const res = await apiRequest("POST", "/api/session", { userId: user?.id });
+      const res = await apiRequest("POST", "/api/session", {});
       const sessionData = await res.json();
       console.log(`[ChatPage] Session fetched: ${sessionData.id}`);
       return sessionData;
@@ -437,7 +438,7 @@ export default function ChatPage() {
     queryFn: async () => {
       try {
         // Use POST endpoint which returns premium status
-        const res = await apiRequest("POST", "/api/user/usage", { userId: user?.id });
+        const res = await apiRequest("POST", "/api/user/usage", {});
         const data = await res.json();
         // Only log if premium status changed or on first load
         if (data?.premiumUser) {
@@ -653,23 +654,24 @@ export default function ChatPage() {
       setStreamingMessage("");
 
       try {
-        // Chat endpoint uses streaming, so we need to use fetch directly with API_BASE
-        const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+        // Use same API base as rest of app: relative URL in dev (Vite proxy → backend), or VITE_API_URL in prod
+        const API_BASE = import.meta.env.VITE_API_URL || '';
         
         // Ensure we use the new persona ID format (map old types to new)
         const personaToSend = selectedPersonaId || mapPersonaToNewId(user?.persona) || 'sweet_supportive';
         
         console.log('[ChatPage] Sending message with persona_id:', personaToSend, '(mapped from:', selectedPersonaId || user?.persona, ')');
         
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        
         const response = await fetch(`${API_BASE}/api/chat`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers,
           body: JSON.stringify({ 
             content, 
             sessionId: session.id, 
-            userId: user?.id,
             persona_id: personaToSend // Always send new ID format
           }),
         });
@@ -872,6 +874,10 @@ export default function ChatPage() {
       } catch (error: any) {
         console.error("Chat error:", error);
         setStreamingMessage(""); // Clear on error
+        // Helpful message when backend is not running (ERR_CONNECTION_REFUSED → "Failed to fetch")
+        if (error?.name === "TypeError" && error?.message === "Failed to fetch") {
+          throw new Error("Cannot reach the chat server. Make sure the backend is running (e.g. run npm run dev:all).");
+        }
         throw error;
       } finally {
         setIsTyping(false);
@@ -897,9 +903,9 @@ export default function ChatPage() {
 
       toast({
         title: "Failed to send message",
-        description: "Please try again.",
+        description: error?.message || "Please try again.",
         variant: "destructive",
-        duration: 3000,
+        duration: 5000,
       });
     },
   });

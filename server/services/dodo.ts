@@ -1,6 +1,9 @@
+import { createRequire } from 'module';
 import { supabase } from '../supabase';
 
-// Lazy import DodoPayments to avoid build issues
+const require = createRequire(import.meta.url);
+
+// Lazy import DodoPayments to avoid build issues (ESM has no require)
 let DodoPaymentsClass: any = null;
 let dodo: any = null;
 

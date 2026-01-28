@@ -55,7 +55,7 @@ export function TopNavbar() {
     await logout();
     console.log('✅ Logout complete, redirecting...');
     // Redirect to signup page
-    window.location.href = '/signup';
+    window.location.href = '/login';
   };
 
   const handleUpgradeClick = () => {

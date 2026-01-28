@@ -84,7 +84,7 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
   const handleLogout = async () => {
     setIsMenuOpen(false);
     await logout();
-    window.location.href = '/signup';
+    window.location.href = '/login';
   };
 
   // Calculate menu position when opening

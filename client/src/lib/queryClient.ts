@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { auth } from "@/lib/firebase";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -66,9 +67,13 @@ export async function apiRequest(
   const methodsWithoutBody = ['GET', 'HEAD'];
   const hasBody = data !== undefined && data !== null && !methodsWithoutBody.includes(method.toUpperCase());
   
+  const headers: Record<string, string> = hasBody ? { "Content-Type": "application/json" } : {};
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  
   const res = await fetch(fullUrl, {
     method,
-    headers: hasBody ? { "Content-Type": "application/json" } : {},
+    headers,
     body: hasBody ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -86,8 +91,13 @@ export const getQueryFn: <T>(options: {
       const path = queryKey.join("/");
       const fullUrl = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
+      const headers: Record<string, string> = {};
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(fullUrl, {
         credentials: "include",
+        headers,
       });
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {
