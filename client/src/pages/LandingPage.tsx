@@ -126,7 +126,7 @@ export default function LandingPage() {
               {/* Top Left - Riya in red kurta with "Riya" overlay */}
               <div className="relative rounded-2xl overflow-hidden aspect-[3/4] shadow-xl">
                 <img
-                  src="/images/hero-1.png"
+                  src="/images/riya-main.jpg"
                   alt="Riya - Traditional Outfit"
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -141,7 +141,7 @@ export default function LandingPage() {
               {/* Top Right - Woman talking on phone with Online badge */}
               <div className="relative rounded-2xl overflow-hidden aspect-[3/4] shadow-xl">
                 <img
-                  src="/images/hero-2.png"
+                  src="/images/riya-landing-final.jpg"
                   alt="Voice call - Woman on phone"
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -157,7 +157,7 @@ export default function LandingPage() {
               {/* Bottom Left - Woman in red saree */}
               <div className="relative rounded-2xl overflow-hidden aspect-[3/4] shadow-xl">
                 <img
-                  src="/images/hero-3.png"
+                  src="/images/riya-main.jpg"
                   alt="Riya - Traditional Saree"
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -169,7 +169,7 @@ export default function LandingPage() {
               {/* Bottom Right - Woman with laptop */}
               <div className="relative rounded-2xl overflow-hidden aspect-[3/4] shadow-xl">
                 <img
-                  src="/images/hero-4.png"
+                  src="/images/riya-landing-final.jpg"
                   alt="Woman working on laptop"
                   className="w-full h-full object-cover"
                   onError={(e) => {

@@ -29,9 +29,12 @@ export async function resolveFirebaseUser(req: Request, res: Response, next: Nex
   } catch (e: any) {
     const message = e?.message ?? "Failed to resolve user";
     console.error("[resolveFirebaseUser]", message, e);
-    return res.status(500).json({
-      error: "Failed to resolve user",
-      details: process.env.NODE_ENV === "development" ? message : undefined,
-    });
+    // Fallback: set session with Firebase UID so auth/session returns 200 and app can load.
+    // Downstream routes (usage, chat) may return defaults if this userId isn't in Supabase.
+    (req as any).session = {
+      userId: fb.uid,
+      firebaseUid: fb.uid,
+    };
+    return next();
   }
 }
