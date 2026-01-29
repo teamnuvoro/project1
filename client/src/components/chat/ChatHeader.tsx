@@ -62,7 +62,7 @@ export function ChatHeader({ sessionId, voiceModeEnabled, onVoiceModeToggle, onP
     },
   });
 
-  /* Force default to false so badge ONLY shows for active Cashfree subscriptions */
+  /* Force default to false so badge ONLY shows for active Dodo subscriptions */
   // ONLY use API response - DO NOT use user.premium_user from AuthContext (may be stale)
   // Prioritize prop (from ChatPage) over local query to ensure consistency
   const finalUserUsage = userUsageProp || userUsage;

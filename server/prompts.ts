@@ -114,4 +114,4 @@ Upgrade to continue chatting with Riya:
 
 Your love story is just beginning... unlock unlimited chat today! 💕`;
 
-export const FREE_MESSAGE_LIMIT = 1000; // Free users get 1000 messages
+export const FREE_MESSAGE_LIMIT = 20; // Free users get 20 messages, then paywall

@@ -201,7 +201,6 @@ export async function createOrGetUserByPhone(
       user_id: newUser.id,
       total_messages: 0,
       total_call_seconds: 0,
-      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
 

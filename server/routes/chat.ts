@@ -490,19 +490,22 @@ router.get("/api/messages", async (req: Request, res: Response) => {
 
 router.post("/api/chat", async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).session?.userId ?? req.body?.userId;
+    // Require session so quota always matches /api/user/usage (same userId). Never use body.userId alone.
+    const session = (req as any).session as { userId?: string } | undefined;
+    const userId = session?.userId;
     const { content, sessionId, persona_id } = req.body;
-    
-    // Log the incoming request for debugging
-    console.log(`[POST /api/chat] Request received - userId: ${userId}, sessionId: ${sessionId?.substring(0, 8)}...`);
 
+    console.log(`[POST /api/chat] Request received - userId: ${userId}, sessionId: ${sessionId?.substring(0, 8)}...`);
     console.log("------------------------------------------");
     console.log(`[Chat] Request received. User: ${userId}`);
     console.log(`[Chat] Server Mode: ${isSupabaseConfigured ? 'SUPABASE (Enforcing Limits)' : 'IN-MEMORY (NO LIMITS - BYPASSING PAYWALL)'}`);
     console.log("------------------------------------------");
 
     if (!userId) {
-      return res.status(401).json({ error: "User unauthorized" });
+      return res.status(401).json({
+        error: "Please sign in again to send messages",
+        code: "SESSION_REQUIRED",
+      });
     }
 
     // Fetch actual user details

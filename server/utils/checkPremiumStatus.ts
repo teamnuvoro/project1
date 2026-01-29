@@ -25,8 +25,7 @@ export async function checkPremiumStatus(
       return { isPremium: false, source: 'none' };
     }
 
-    // ONLY CHECK CASHFREE SUBSCRIPTIONS - No daily premium, no user flags
-    // Only users with active Cashfree payments are premium
+    // Check subscriptions table (Dodo subscription records)
     const { data: activeSubscription, error: subError } = await supabase
       .from('subscriptions')
       .select('status, plan_type')
@@ -39,16 +38,36 @@ export async function checkPremiumStatus(
     }
 
     if (activeSubscription && activeSubscription.status === 'active') {
-      console.log(`[Premium Check] User ${userId} has active Cashfree subscription`);
-      return { 
-        isPremium: true, 
+      console.log(`[Premium Check] User ${userId} has active subscription`);
+      return {
+        isPremium: true,
         source: 'subscription',
         planType: activeSubscription.plan_type || 'premium'
       };
     }
 
-    // Not Premium - no active Cashfree subscription
-    console.log(`[Premium Check] User ${userId} is free (no active Cashfree subscription)`);
+    // Check users.premium_user (set by Dodo webhook when payment succeeds)
+    const { data: userRow, error: userError } = await supabase
+      .from('users')
+      .select('premium_user, subscription_expiry, subscription_plan')
+      .eq('id', userId)
+      .single();
+
+    if (!userError && userRow?.premium_user) {
+      const now = new Date();
+      const isExpired = userRow.subscription_expiry ? new Date(userRow.subscription_expiry) < now : false;
+      if (!isExpired) {
+        console.log(`[Premium Check] User ${userId} has premium_user=true (e.g. Dodo payment)`);
+        return {
+          isPremium: true,
+          source: 'user_flag',
+          planType: userRow.subscription_plan || 'monthly'
+        };
+      }
+    }
+
+    // Not premium
+    console.log(`[Premium Check] User ${userId} is free`);
     return { isPremium: false, source: 'none' };
 
   } catch (error) {

@@ -1,21 +1,35 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, PhoneOff, Loader2, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'wouter';
 import { getVapi, startCall, stopCall } from '@/lib/vapiCallManager';
 import { getProtectedCallConfig, validateCallConfig, assertVoiceCallIntegrity } from '@/lib/voiceCallProtection';
 
+const FREE_CALL_LIMIT_SECONDS = 80; // 1 min 20 sec for free users
+
 interface RiyaVoiceCallProps {
   userId: string;
   onCallEnd?: () => void;
+  /** Free users: seconds remaining in their allowance (e.g. 80 - totalUsed). */
+  remainingFreeSeconds?: number;
+  /** Call when free user hits time limit so parent can show paywall. */
+  onPaywallOpen?: () => void;
+  isPremium?: boolean;
 }
 
-export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps) {
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+export default function RiyaVoiceCall({ userId, onCallEnd, remainingFreeSeconds = FREE_CALL_LIMIT_SECONDS, onPaywallOpen, isPremium = false }: RiyaVoiceCallProps) {
   const [status, setStatus] = useState<"disconnected" | "connecting" | "connected" | "started" | "ended">("disconnected");
   const [isMuted, setIsMuted] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isBillingError, setIsBillingError] = useState(false); // Track billing errors to prevent retries
+  const [isBillingError, setIsBillingError] = useState(false);
+  const [sessionDuration, setSessionDuration] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
   // 🔒 PROTECTION: Verify voice call integrity on mount
@@ -42,11 +56,17 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
       console.log("[RiyaVoiceCall] Call Started");
       setStatus("connected");
       setConnectionError(null);
+      setSessionDuration(0);
     };
 
     const handleCallEnd = () => {
       console.log("[RiyaVoiceCall] Call Ended");
       setStatus("disconnected");
+      setSessionDuration(0);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       if (onCallEnd) onCallEnd();
     };
 
@@ -128,6 +148,40 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
     };
   }, [onCallEnd, toast]);
 
+  // Timer: count up during call; for free users, end call and show paywall at limit
+  useEffect(() => {
+    if (status !== "connected") return;
+    timerRef.current = setInterval(() => {
+      setSessionDuration((prev) => {
+        const next = prev + 1;
+        if (!isPremium && next >= remainingFreeSeconds) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          stopCall();
+          setStatus("disconnected");
+          setSessionDuration(0);
+          toast({
+            title: "Free call limit reached",
+            description: "Upgrade to Premium for unlimited calls.",
+            variant: "destructive",
+            duration: 5000,
+          });
+          onPaywallOpen?.();
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [status, isPremium, remainingFreeSeconds, onPaywallOpen, toast]);
+
   const handleStartCall = async () => {
     if (status === "connecting" || status === "connected") {
       console.log('[RiyaVoiceCall] Call already active, ignoring start request');
@@ -208,6 +262,7 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
   const isDisconnected = status === "disconnected" || status === "ended";
+  const remainingSeconds = !isPremium ? Math.max(0, remainingFreeSeconds - sessionDuration) : null;
 
   return (
     <div className="flex flex-col h-full w-full items-center justify-center px-4 sm:px-6 py-8 sm:py-12 relative">
@@ -220,6 +275,20 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
           <ArrowLeft className="w-5 h-5 text-white" />
         </button>
       </Link>
+
+      {/* Call timer - visible when connected */}
+      {isConnected && (
+        <div className={`absolute top-4 right-4 sm:top-6 sm:right-6 rounded-full px-4 py-2 flex items-center gap-2 z-50 ${!isPremium ? 'bg-amber-500/90' : 'bg-black/30 backdrop-blur-sm'}`}>
+          <span className="text-white font-mono text-xl font-semibold" data-testid="call-timer">
+            {formatTime(sessionDuration)}
+          </span>
+          {remainingSeconds !== null && (
+            <span className="text-white/90 text-sm">
+              ({formatTime(remainingSeconds)} left)
+            </span>
+          )}
+        </div>
+      )}
 
       {/* iPhone-Style Call Screen Layout */}
       <div className="flex flex-col items-center justify-center w-full max-w-sm">
@@ -339,3 +408,4 @@ export default function RiyaVoiceCall({ userId, onCallEnd }: RiyaVoiceCallProps)
     </div>
   );
 }
+

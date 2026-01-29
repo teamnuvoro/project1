@@ -216,8 +216,8 @@ router.patch('/api/user/persona', async (req: Request, res: Response) => {
 // Get user usage stats
 router.get('/api/user/usage', async (req: Request, res: Response) => {
   try {
-    // Get userId from query params, session, or fallback to dev
-    const userId = (req.query?.userId as string) || (req as any).session?.userId || DEV_USER_ID;
+    // Prefer session.userId (from Firebase auth) so usage matches chat route
+    const userId = (req as any).session?.userId ?? (req.query?.userId as string) ?? DEV_USER_ID;
 
     // Try to get usage stats - if table doesn't exist, use defaults
     let stats = { total_messages: 0, total_call_seconds: 0 };
@@ -238,123 +238,59 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
         console.error('[/api/user/usage] Supabase error:', error);
       }
 
-      // Check premium status ONLY from Cashfree subscriptions (not daily premium)
-      // Only users with active Cashfree payments are premium
-      // IMPORTANT: Exclude mock payments - only real Cashfree payments grant premium
+      // Check premium status from Dodo subscriptions (and users.premium_user set by Dodo webhook)
       const { data: subscriptions, error: subError } = await supabase
         .from('subscriptions')
-        .select('status, plan_type, expires_at, id, cashfree_order_id')
+        .select('status, plan_type, expires_at, id, dodo_order_id')
         .eq('user_id', userId)
         .eq('status', 'active')
-        .order('expires_at', { ascending: false }); // Get the most recent first
+        .order('expires_at', { ascending: false });
 
       if (!subError && subscriptions && subscriptions.length > 0) {
-        // Check if subscription hasn't expired AND is from a real payment (not mock)
         const now = new Date();
         let activeSubscription = null;
-        
         for (const sub of subscriptions) {
-          // Skip mock subscriptions (identified by mock_order prefix in cashfree_order_id)
-          if (sub.cashfree_order_id && sub.cashfree_order_id.startsWith('mock_order_')) {
-            console.log(`[User Usage] Skipping mock subscription ${sub.id} (order: ${sub.cashfree_order_id})`);
+          if (!sub.expires_at) continue;
+          if (new Date(sub.expires_at) <= now) {
+            supabase.from('subscriptions').update({ status: 'expired', updated_at: new Date().toISOString() }).eq('id', sub.id).then(() => {});
             continue;
           }
-          
-          if (!sub.expires_at) {
-            // No expiry date - treat as expired for security (all subscriptions should have expiry)
-            console.log(`[User Usage] Subscription ${sub.id} has no expiry date - treating as expired`);
-            continue;
-          }
-          
-          const expiry = new Date(sub.expires_at);
-          const isExpired = expiry <= now;
-          
-          if (isExpired) {
-            // Mark expired subscriptions as expired in database
-            supabase
-              .from('subscriptions')
-              .update({ status: 'expired', updated_at: new Date().toISOString() })
-              .eq('id', sub.id)
-              .then(({ error }) => {
-                if (error) {
-                  console.error(`[User Usage] Failed to mark subscription ${sub.id} as expired:`, error);
-                } else {
-                  console.log(`[User Usage] Marked expired subscription ${sub.id} as expired`);
-                }
-              });
-            continue;
-          }
-          
-          // Check if this subscription has a corresponding real payment (not mock)
-          if (sub.cashfree_order_id) {
-            // Skip if it's a mock order ID
-            if (sub.cashfree_order_id.startsWith('mock_order_')) {
-              console.log(`[User Usage] Subscription ${sub.id} has mock order ID - skipping`);
-              continue;
-            }
-            
-            const { data: payment } = await supabase
-              .from('payments')
-              .select('payment_method, status')
-              .eq('cashfree_order_id', sub.cashfree_order_id)
-              .eq('status', 'success')
-              .single();
-            
-            if (payment && payment.payment_method === 'mock') {
-              console.log(`[User Usage] Subscription ${sub.id} has mock payment - skipping`);
-              continue;
-            }
-            
-            // If no payment found, skip this subscription (must have a real payment)
-            if (!payment) {
-              console.log(`[User Usage] Subscription ${sub.id} has no corresponding payment - skipping`);
-              continue;
-            }
-          } else {
-            // No order ID means it's not a real Cashfree subscription
-            console.log(`[User Usage] Subscription ${sub.id} has no cashfree_order_id - skipping`);
-            continue;
-          }
-          
-          // Valid, non-expired, non-mock subscription found
           activeSubscription = sub;
           break;
         }
-
         if (activeSubscription) {
           isPremium = true;
           subscriptionPlan = activeSubscription.plan_type || 'premium';
-          console.log(`[User Usage] User ${userId} has active Cashfree subscription: ${subscriptionPlan}, expires: ${activeSubscription.expires_at}`);
+          console.log(`[User Usage] User ${userId} has active Dodo subscription: ${subscriptionPlan}, expires: ${activeSubscription.expires_at}`);
         } else {
-          // All subscriptions expired or are mock payments
           isPremium = false;
           subscriptionPlan = undefined;
-          console.log(`[User Usage] User ${userId} is free (no valid active Cashfree subscription - all expired or mock)`);
+          console.log(`[User Usage] User ${userId} is free (no valid active Dodo subscription - all expired)`);
         }
       } else {
-        // No active Cashfree subscription - user is free
         isPremium = false;
         subscriptionPlan = undefined;
-        console.log(`[User Usage] User ${userId} is free (no active Cashfree subscription)`);
+        console.log(`[User Usage] User ${userId} is free (no active Dodo subscription)`);
       }
     } catch (e) {
-      // Supabase connection issue - use defaults
       console.log('[/api/user/usage] Using default stats:', e);
     }
 
     // Calculate message limit (20 for free users, unlimited for premium)
     const MESSAGE_LIMIT = 20;
-    const CALL_LIMIT_SECONDS = 120; // 2 minutes
+    const CALL_LIMIT_SECONDS = 80; // 1 minute 20 seconds for free users
     const messageLimit = isPremium ? 999999 : MESSAGE_LIMIT;
     const messageLimitReached = !isPremium && stats.total_messages >= messageLimit;
 
+    // Call duration: use call_duration_seconds (written by /api/call/end) or fallback to total_call_seconds
+    const callDuration = (stats as any).call_duration_seconds ?? stats.total_call_seconds ?? 0;
     res.json({
       messageCount: stats.total_messages,
-      callDuration: stats.total_call_seconds,
+      callDuration,
       premiumUser: isPremium,
       subscriptionPlan: subscriptionPlan,
       messageLimitReached: messageLimitReached,
-      callLimitReached: !isPremium && stats.total_call_seconds >= CALL_LIMIT_SECONDS,
+      callLimitReached: !isPremium && callDuration >= CALL_LIMIT_SECONDS,
     });
   } catch (error: any) {
     console.error('[/api/user/usage] Error:', error);
@@ -372,8 +308,8 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
 // Increment message count
 router.post('/api/user/usage', async (req: Request, res: Response) => {
   try {
-    // Get userId from request body (frontend sends it), session, or fallback to dev
-    const userId = req.body?.userId || (req as any).session?.userId || DEV_USER_ID;
+    // Prefer session.userId (from Firebase auth) so usage matches chat route and quota
+    const userId = (req as any).session?.userId ?? req.body?.userId ?? DEV_USER_ID;
     const { incrementMessages, incrementCallSeconds } = req.body;
 
     let currentMessages = 0;
@@ -390,7 +326,8 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
         .single();
 
       currentMessages = current?.total_messages || 0;
-      currentSeconds = current?.total_call_seconds || 0;
+      // Call duration: use call_duration_seconds (same column /api/call/end writes) or total_call_seconds
+      currentSeconds = (current as any)?.call_duration_seconds ?? current?.total_call_seconds ?? 0;
 
       const { data, error } = await supabase
         .from('usage_stats')
@@ -398,6 +335,7 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
           user_id: userId,
           total_messages: currentMessages + (incrementMessages || 0),
           total_call_seconds: currentSeconds + (incrementCallSeconds || 0),
+          call_duration_seconds: currentSeconds + (incrementCallSeconds || 0),
           updated_at: new Date().toISOString()
         })
         .select()
@@ -405,115 +343,50 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
 
       if (!error && data) {
         currentMessages = data.total_messages;
-        currentSeconds = data.total_call_seconds;
+        currentSeconds = (data as any).call_duration_seconds ?? data.total_call_seconds ?? 0;
       } else if (error) {
         console.error('[POST /api/user/usage] Supabase error:', error);
       }
 
-      // Check premium status ONLY from Cashfree subscriptions (not daily premium)
-      // Only users with active Cashfree payments are premium
-      // IMPORTANT: Exclude mock payments - only real Cashfree payments grant premium
+      // Check premium status from Dodo subscriptions
       const { data: subscriptions, error: subError } = await supabase
         .from('subscriptions')
-        .select('status, plan_type, expires_at, id, cashfree_order_id')
+        .select('status, plan_type, expires_at, id, dodo_order_id')
         .eq('user_id', userId)
         .eq('status', 'active')
-        .order('expires_at', { ascending: false }); // Get the most recent first
+        .order('expires_at', { ascending: false });
 
       if (!subError && subscriptions && subscriptions.length > 0) {
-        // Check if subscription hasn't expired AND is from a real payment (not mock)
         const now = new Date();
         let activeSubscription = null;
-        
         for (const sub of subscriptions) {
-          // Skip mock subscriptions (identified by mock_order prefix in cashfree_order_id)
-          if (sub.cashfree_order_id && sub.cashfree_order_id.startsWith('mock_order_')) {
-            console.log(`[User Usage] Skipping mock subscription ${sub.id} (order: ${sub.cashfree_order_id})`);
+          if (!sub.expires_at) continue;
+          if (new Date(sub.expires_at) <= now) {
+            supabase.from('subscriptions').update({ status: 'expired', updated_at: new Date().toISOString() }).eq('id', sub.id).then(() => {});
             continue;
           }
-          
-          if (!sub.expires_at) {
-            // No expiry date - treat as expired for security (all subscriptions should have expiry)
-            console.log(`[User Usage] Subscription ${sub.id} has no expiry date - treating as expired`);
-            continue;
-          }
-          
-          const expiry = new Date(sub.expires_at);
-          const isExpired = expiry <= now;
-          
-          if (isExpired) {
-            // Mark expired subscriptions as expired in database
-            supabase
-              .from('subscriptions')
-              .update({ status: 'expired', updated_at: new Date().toISOString() })
-              .eq('id', sub.id)
-              .then(({ error }) => {
-                if (error) {
-                  console.error(`[User Usage] Failed to mark subscription ${sub.id} as expired:`, error);
-                } else {
-                  console.log(`[User Usage] Marked expired subscription ${sub.id} as expired`);
-                }
-              });
-            continue;
-          }
-          
-          // Check if this subscription has a corresponding real payment (not mock)
-          if (sub.cashfree_order_id) {
-            // Skip if it's a mock order ID
-            if (sub.cashfree_order_id.startsWith('mock_order_')) {
-              console.log(`[User Usage] Subscription ${sub.id} has mock order ID - skipping`);
-              continue;
-            }
-            
-            const { data: payment } = await supabase
-              .from('payments')
-              .select('payment_method, status')
-              .eq('cashfree_order_id', sub.cashfree_order_id)
-              .eq('status', 'success')
-              .single();
-            
-            if (payment && payment.payment_method === 'mock') {
-              console.log(`[User Usage] Subscription ${sub.id} has mock payment - skipping`);
-              continue;
-            }
-            
-            // If no payment found, skip this subscription (must have a real payment)
-            if (!payment) {
-              console.log(`[User Usage] Subscription ${sub.id} has no corresponding payment - skipping`);
-              continue;
-            }
-          } else {
-            // No order ID means it's not a real Cashfree subscription
-            console.log(`[User Usage] Subscription ${sub.id} has no cashfree_order_id - skipping`);
-            continue;
-          }
-          
-          // Valid, non-expired, non-mock subscription found
           activeSubscription = sub;
           break;
         }
-
         if (activeSubscription) {
           isPremium = true;
           subscriptionPlan = activeSubscription.plan_type || 'premium';
-          console.log(`[User Usage] User ${userId} has active Cashfree subscription: ${subscriptionPlan}, expires: ${activeSubscription.expires_at}`);
+          console.log(`[User Usage] User ${userId} has active Dodo subscription: ${subscriptionPlan}, expires: ${activeSubscription.expires_at}`);
         } else {
-          // All subscriptions expired or are mock payments
           isPremium = false;
           subscriptionPlan = undefined;
-          console.log(`[User Usage] User ${userId} is free (no valid active Cashfree subscription - all expired or mock)`);
+          console.log(`[User Usage] User ${userId} is free (no valid active Dodo subscription - all expired)`);
         }
       } else {
-        // No active Cashfree subscription - user is free
         isPremium = false;
         subscriptionPlan = undefined;
-        console.log(`[User Usage] User ${userId} is free (no active Cashfree subscription)`);
+        console.log(`[User Usage] User ${userId} is free (no active Dodo subscription)`);
       }
     } catch (e) {
       console.log('[POST /api/user/usage] Using local counters:', e);
     }
 
-    // CRITICAL: Also check premium_user field from users table (set by Dodo webhook)
+    // Also check premium_user from users table (set by Dodo webhook)
     // This ensures users upgraded via Dodo Payments get premium access immediately
     if (!isPremium && isSupabaseConfigured) {
       try {
@@ -543,7 +416,7 @@ router.post('/api/user/usage', async (req: Request, res: Response) => {
 
     // Calculate message limit (20 for free users, unlimited for premium)
     const MESSAGE_LIMIT = 20;
-    const CALL_LIMIT_SECONDS = 120; // 2 minutes
+    const CALL_LIMIT_SECONDS = 80; // 1 minute 20 seconds for free users
     const messageLimit = isPremium ? 999999 : MESSAGE_LIMIT;
     const finalMessageCount = currentMessages + (incrementMessages || 0);
     const messageLimitReached = !isPremium && finalMessageCount >= messageLimit;

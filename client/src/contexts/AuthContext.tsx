@@ -54,11 +54,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const token = await fbUser.getIdToken();
-        // Tell backend to ensure profile exists + get internal userId mapping
+        const pendingPhone = typeof localStorage !== "undefined" ? localStorage.getItem("pendingPhoneNumber") : null;
+        const body = pendingPhone ? { phoneNumber: pendingPhone } : undefined;
         const resp = await fetch("/api/auth/session", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...(body ? { "Content-Type": "application/json" } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
         });
+        if (pendingPhone) {
+          try {
+            localStorage.removeItem("pendingPhoneNumber");
+          } catch (_) {}
+        }
         const sessionInfo = await resp.json().catch(() => ({}));
 
         const nextUser: User = {

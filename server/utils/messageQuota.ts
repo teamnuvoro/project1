@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
-const FREE_MESSAGE_LIMIT = 1000;
+const FREE_MESSAGE_LIMIT = 20;
 
 export interface MessageQuotaCheck {
   allowed: boolean;
@@ -118,60 +118,31 @@ export async function checkMessageQuota(
       }
     }
 
-    // ===== STEP 3: Free user - check 24-hour message count =====
-    const { data: messageCount, error: countError } = await supabase
-      .rpc('get_user_message_count_24h', { p_user_id: userId });
+    // ===== STEP 3: Free user - check total message count (first 20 free, then paywall) =====
+    // Use usage_stats.total_messages so backend and /api/user/usage stay in sync
+    const { data: usage, error: usageError } = await supabase
+      .from('usage_stats')
+      .select('total_messages')
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    if (countError) {
-      console.error('[Message Quota] Error counting messages:', countError);
-      // Fallback: count manually
-      const { count, error: fallbackError } = await supabase
-        .from('message_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('is_user_message', true)
-        .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-      // If both methods fail, allow the message (fail open for new users)
-      // This ensures new users can always send their first messages
-      if (fallbackError) {
-        console.error('[Message Quota] Fallback count also failed:', fallbackError);
-        // Fail open: allow message if we can't determine count (protects new users)
-        return {
-          allowed: true,
-          messageCount: 0,
-          limit: FREE_MESSAGE_LIMIT,
-          subscriptionTier: 'free',
-          reason: 'Could not verify message count, allowing message'
-        };
-      }
-
-      const msgCount = count || 0;
-
-      // Allow if count is less than limit (0-999 can send, 1000+ blocked)
-      if (msgCount >= FREE_MESSAGE_LIMIT) {
-        return {
-          allowed: false,
-          reason: 'Message limit reached. Upgrade to continue chatting.',
-          messageCount: msgCount,
-          limit: FREE_MESSAGE_LIMIT,
-          subscriptionTier: 'free'
-        };
-      }
-
+    if (usageError) {
+      console.error('[Message Quota] Error fetching usage_stats:', usageError);
+      // Fail open: allow message so new users are not blocked
       return {
         allowed: true,
-        messageCount: msgCount,
+        messageCount: 0,
         limit: FREE_MESSAGE_LIMIT,
-        subscriptionTier: 'free'
+        subscriptionTier: 'free',
+        reason: 'Could not verify message count, allowing message'
       };
     }
 
-    const msgCount = messageCount || 0;
+    const msgCount = usage?.total_messages ?? 0;
 
-    // Allow if count is less than limit (0-999 can send, 1000+ blocked)
-    // This ensures new users (count = 0) can send their first 1000 messages
+    // Block when user has already sent 20 messages (allow 0..19, block from 20)
     if (msgCount >= FREE_MESSAGE_LIMIT) {
+      console.log(`[Message Quota] Blocking userId=${userId} (usage_stats.total_messages=${msgCount}, limit=${FREE_MESSAGE_LIMIT}). To reset: UPDATE usage_stats SET total_messages = 0 WHERE user_id = '${userId}';`);
       return {
         allowed: false,
         reason: 'Message limit reached. Upgrade to continue chatting.',

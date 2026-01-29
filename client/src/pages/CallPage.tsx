@@ -13,8 +13,8 @@ import RiyaVoiceCall from '@/components/voice/RiyaVoiceCall';
 
 type CallStatus = 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'ended';
 
-const FREE_CALL_LIMIT_SECONDS = 120; // 2 minutes for free users
-const WARNING_THRESHOLD_SECONDS = 100; // Warning at 100 seconds (20 seconds remaining)
+const FREE_CALL_LIMIT_SECONDS = 80; // 1 minute 20 seconds for free users
+const WARNING_THRESHOLD_SECONDS = 60; // Warning at 60 seconds (20 seconds remaining)
 
 export default function CallPage() {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -776,11 +776,21 @@ export default function CallPage() {
         {/* Content Container */}
         <div className="relative z-10 flex flex-col h-full w-full items-center justify-center">
           {user?.id ? (
-            <RiyaVoiceCall userId={user.id} />
+            <RiyaVoiceCall
+              userId={user.id}
+              remainingFreeSeconds={Math.max(0, FREE_CALL_LIMIT_SECONDS - (userUsage?.callDuration || 0))}
+              isPremium={!!userUsage?.premiumUser}
+              onPaywallOpen={() => setPaywallOpen(true)}
+            />
           ) : (
             <div className="text-white/80 text-lg font-light">Loading user…</div>
           )}
         </div>
+        <PaywallSheet
+          open={paywallOpen}
+          onOpenChange={setPaywallOpen}
+          messageCount={userUsage?.messageCount || 0}
+        />
       </div>
     );
   }
@@ -936,7 +946,7 @@ export default function CallPage() {
                 Time remaining: {formatTime(Math.max(0, remainingFreeSeconds - sessionDuration))}
               </p>
               <p className="text-gray-500 text-xs mt-1">
-                Session: {formatTime(sessionDuration)} | Total used: {formatTime(totalUsedSeconds + sessionDuration)} / 2:15
+                Session: {formatTime(sessionDuration)} | Total used: {formatTime(totalUsedSeconds + sessionDuration)} / 1:20
               </p>
             </div>
           )}

@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -33,6 +33,16 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const userCred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      if (!userCred.user.emailVerified) {
+        await signOut(auth);
+        setError("Please verify your email first. Check your inbox for the verification link.");
+        toast({
+          title: "Verify your email",
+          description: "We sent a link to your email. Open it, then sign in again.",
+          variant: "destructive",
+        });
+        return;
+      }
       const idToken = await userCred.user.getIdToken();
       await fetch("/api/auth/session", {
         method: "POST",
@@ -59,7 +69,6 @@ export default function LoginPage() {
         <p className="text-sm text-gray-600 mb-6">Use your email and password.</p>
 
         <form
-          action="javascript:void(0)"
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();

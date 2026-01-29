@@ -534,13 +534,16 @@ export default function ChatPage() {
     ? rawBackendCount 
     : 0;
   
-  // Use backend count as primary source (from /api/user/usage API)
-  // Fall back to local count only if backend is unavailable (0 or invalid)
-  const currentCount = backendCount > 0 ? backendCount : localCount;
+  // Use backend count whenever API has returned a valid number (including 0).
+  // Only fall back to local count when usage hasn't loaded yet (avoids stale localStorage triggering paywall on first message).
+  const currentCount =
+    userUsage != null && typeof rawBackendCount === "number" && !isNaN(rawBackendCount) && rawBackendCount >= 0
+      ? rawBackendCount
+      : localCount;
 
-  // Check premium status - ONLY use API response from /api/user/usage (which checks Cashfree subscriptions)
+  // Check premium status - ONLY use API response from /api/user/usage (which checks Dodo subscriptions)
   // DO NOT use user?.premium_user from AuthContext as it may be stale/old data
-  // Premium status must come from active Cashfree subscriptions only
+  // Premium status must come from active Dodo subscriptions (or users.premium_user set by Dodo webhook)
   // STRICT CHECK: Only premium if BOTH premiumUser is true AND subscriptionPlan is defined
   const isPremium = (userUsage?.premiumUser === true) && (userUsage?.subscriptionPlan !== undefined);
   
@@ -669,10 +672,11 @@ export default function ChatPage() {
         const response = await fetch(`${API_BASE}/api/chat`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ 
-            content, 
-            sessionId: session.id, 
-            persona_id: personaToSend // Always send new ID format
+          body: JSON.stringify({
+            content,
+            sessionId: session.id,
+            userId: user?.id,
+            persona_id: personaToSend,
           }),
         });
 
@@ -682,6 +686,15 @@ export default function ChatPage() {
           setPaywallOpen(true);
           queryClient.invalidateQueries({ queryKey: ["/api/user/usage"] });
           return { success: false, reason: 'paywall' };
+        }
+
+        if (response.status === 401) {
+          setIsTyping(false);
+          removeOptimisticMessage(optimisticId);
+          queryClient.invalidateQueries({ queryKey: ["/api/user/usage"] });
+          refetchUser();
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error || "Please sign in again to send messages.");
         }
 
         if (!response.ok) {
@@ -920,7 +933,7 @@ export default function ChatPage() {
       ? rawBackendCount 
       : 0;
     const effectiveCount = validatedBackendCount > 0 ? validatedBackendCount : currentLocal;
-    // ONLY use API response for premium status (checks Cashfree subscriptions)
+    // ONLY use API response for premium status (checks Dodo subscriptions)
     // DO NOT use user?.premium_user as it may be stale
     const isPremiumUser = userUsage?.premiumUser === true;
 

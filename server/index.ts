@@ -73,6 +73,8 @@ app.use((req, res, next) => {
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://*.vapi.ai https://*.daily.co https://*.m.str.chat; script-src-elem 'self' 'unsafe-eval' 'unsafe-inline' blob: https://*.vapi.ai https://*.daily.co https://*.m.str.chat; worker-src blob:; connect-src * blob: wss:; media-src blob: https://*.daily.co https://*.vapi.ai; frame-src https://*.vapi.ai https://*.daily.co;"
   );
+  // Permissions-Policy: avoid deprecated features (interest-cohort, browsing-topics) to prevent console warnings
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
   next();
 });
 

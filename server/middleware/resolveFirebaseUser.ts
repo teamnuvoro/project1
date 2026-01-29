@@ -14,10 +14,12 @@ export async function resolveFirebaseUser(req: Request, res: Response, next: Nex
   }
 
   try {
+    const phoneNumber = (req as any).body?.phoneNumber;
     const { userId, firebaseUid } = await getOrCreateUserIdForFirebaseUid({
       firebaseUid: fb.uid,
       email: fb.email,
       name: fb.name,
+      phoneNumber: typeof phoneNumber === "string" ? phoneNumber : undefined,
     });
     (req as any).session = {
       userId,

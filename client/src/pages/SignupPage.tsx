@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { auth } from "@/lib/firebase";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signOut } from "firebase/auth";
 
 const inputClassName =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm";
@@ -16,6 +16,7 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -42,10 +43,18 @@ export default function SignupPage() {
     try {
       const userCred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       await updateProfile(userCred.user, { displayName: name.trim() });
-      const token = await userCred.user.getIdToken();
-      await fetch("/api/auth/session", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-      toast({ title: "Account created", description: "Redirecting to chat…" });
-      setTimeout(() => setLocation("/chat"), 400);
+      await sendEmailVerification(userCred.user);
+      if (phone.trim()) {
+        try {
+          localStorage.setItem("pendingPhoneNumber", phone.trim());
+        } catch (_) {}
+      }
+      await signOut(auth);
+      toast({
+        title: "Verify your email",
+        description: "We sent a verification link to your email. Open it, then sign in below.",
+      });
+      setLocation("/login");
     } catch (e: any) {
       toast({ title: "Signup failed", description: e?.message || "Please try again.", variant: "destructive" });
       setError(e?.message ?? "Signup failed");
@@ -58,10 +67,9 @@ export default function SignupPage() {
     <div className="min-h-screen w-full flex items-center justify-center px-4 bg-gradient-to-br from-[rgba(252,231,243,1)] via-[rgba(243,232,255,1)] to-[rgba(255,237,212,1)] relative z-10">
       <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-xl relative z-10">
         <h1 className="text-3xl font-bold text-[#9810fa] mb-2">Create account</h1>
-        <p className="text-sm text-gray-600 mb-6">Use your email and password.</p>
+        <p className="text-sm text-gray-600 mb-6">We’ll send a verification link to your email.</p>
 
         <form
-          action="javascript:void(0)"
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -102,6 +110,23 @@ export default function SignupPage() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className={inputClassName}
+              disabled={loading}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="signup-phone" className="text-sm font-medium text-gray-700">
+              Phone number
+            </label>
+            <input
+              id="signup-phone"
+              type="tel"
+              autoComplete="tel"
+              placeholder="+1 234 567 8900"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
               className={inputClassName}
               disabled={loading}
               onClick={(e) => e.stopPropagation()}

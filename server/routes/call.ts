@@ -134,7 +134,7 @@ router.post('/api/call/start', async (req: Request, res: Response) => {
 
     const totalUsed = usageStats?.call_duration_seconds || 0;
     const isPremium = existingUser?.premium_user || false;
-    const FREE_LIMIT = 135;
+    const FREE_LIMIT = 80; // 1 minute 20 seconds for free users
 
     if (!isPremium && totalUsed >= FREE_LIMIT) {
       return res.status(403).json({
