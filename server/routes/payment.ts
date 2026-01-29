@@ -361,6 +361,7 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
 });
 
 // Get payment status (GET endpoint for polling)
+// Supports both Dodo (dodo_order_id) and legacy Cashfree (cashfree_order_id)
 router.get('/api/payment/status/:orderId', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
@@ -369,24 +370,46 @@ router.get('/api/payment/status/:orderId', async (req: Request, res: Response) =
       return res.status(400).json({ error: 'Order ID is required' });
     }
 
-    // Get order from database
     if (!isSupabaseConfigured) {
       return res.status(503).json({ error: 'Database not configured' });
     }
 
-    const { data: subscription, error: fetchError } = await supabase
+    // Look up by Dodo order ID first, then Cashfree (legacy)
+    let subscription: any = null;
+    const { data: byDodo } = await supabase
       .from('subscriptions')
       .select('*')
-      .eq('cashfree_order_id', orderId)
-      .single();
+      .eq('dodo_order_id', orderId)
+      .maybeSingle();
+    if (byDodo) subscription = byDodo;
+    if (!subscription) {
+      const { data: byCashfree } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('cashfree_order_id', orderId)
+        .maybeSingle();
+      subscription = byCashfree;
+    }
 
-    if (fetchError || !subscription) {
+    if (!subscription) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Check payment status with Cashfree Gateway API
-    const cashfreeBaseUrl = getCashfreeBaseUrl();
+    const isAlreadyActive = subscription.status === 'active';
 
+    // Dodo order: status comes from DB (webhook sets active); no Cashfree API call
+    if (subscription.dodo_order_id) {
+      return res.json({
+        success: isAlreadyActive,
+        status: isAlreadyActive ? 'PAID' : 'PENDING',
+        orderId,
+        planType: subscription.plan_type,
+        message: isAlreadyActive ? 'Payment successful' : 'Payment pending'
+      });
+    }
+
+    // Legacy Cashfree: check gateway API
+    const cashfreeBaseUrl = getCashfreeBaseUrl();
     const response = await fetch(`${cashfreeBaseUrl}/orders/${orderId}`, {
       method: 'GET',
       headers: {
@@ -395,9 +418,7 @@ router.get('/api/payment/status/:orderId', async (req: Request, res: Response) =
         'x-client-secret': process.env.CASHFREE_SECRET_KEY!,
       },
     });
-
     const paymentData = await response.json();
-
     if (!response.ok) {
       console.error('[Payment Status] Cashfree error:', paymentData);
       return res.status(500).json({
@@ -405,12 +426,9 @@ router.get('/api/payment/status/:orderId', async (req: Request, res: Response) =
         details: paymentData
       });
     }
-
     const paymentStatus = paymentData.order_status;
     const isPaid = paymentStatus === 'PAID' || paymentStatus === 'ACTIVE' || paymentStatus === 'SUCCESS';
-    const isAlreadyActive = subscription.status === 'active';
 
-    // Return status without updating (for polling)
     res.json({
       success: isPaid || isAlreadyActive,
       status: paymentStatus,
@@ -418,7 +436,6 @@ router.get('/api/payment/status/:orderId', async (req: Request, res: Response) =
       planType: subscription.plan_type,
       message: (isPaid || isAlreadyActive) ? 'Payment successful' : 'Payment pending'
     });
-
   } catch (error: any) {
     console.error('[Payment Status] Error:', error);
     res.status(500).json({
@@ -439,46 +456,28 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Order ID is required' });
     }
 
-    // ✅ REAL PAYMENTS ONLY - Verify with Cashfree API
-    // No mock mode - all payments must go through Cashfree
-
-    // Get order from database
     if (!isSupabaseConfigured) {
       return res.status(503).json({ error: 'Database not configured' });
     }
 
-    // Validate user ID for production (fail fast if invalid)
     validateUserIdForProduction(userId, 'payment verification');
-    
     const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-    
-    // In production, reject invalid UUIDs (already handled by validateUserIdForProduction, but double-check)
     if (IS_PRODUCTION && !isValidUUID) {
       console.error(`❌ Production: Invalid user ID format: ${userId}`);
-      return res.status(400).json({ 
-        error: 'Invalid user ID. Payments require authenticated users with valid accounts.' 
-      });
+      return res.status(400).json({ error: 'Invalid user ID. Payments require authenticated users with valid accounts.' });
     }
-    
-    let subscription = null;
-    let planType = 'daily'; // Default plan type for backdoor users (dev only)
-    
-    if (isValidUUID) {
-      const { data: subData, error: fetchError } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('cashfree_order_id', orderId)
-      .single();
 
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        console.error('[Payment Verify] Error fetching subscription:', fetchError);
-        return res.status(500).json({ error: 'Failed to fetch subscription', details: fetchError.message });
+    let subscription: any = null;
+    let planType = 'daily';
+    if (isValidUUID) {
+      // Look up by Dodo order ID first, then Cashfree (legacy)
+      const { data: byDodo } = await supabase.from('subscriptions').select('*').eq('dodo_order_id', orderId).maybeSingle();
+      if (byDodo) subscription = byDodo;
+      if (!subscription) {
+        const { data: byCashfree } = await supabase.from('subscriptions').select('*').eq('cashfree_order_id', orderId).maybeSingle();
+        subscription = byCashfree;
       }
-      
-      subscription = subData;
-      if (subscription) {
-        planType = subscription.plan_type || 'daily';
-      }
+      if (subscription) planType = subscription.plan_type || 'monthly';
     } else if (!IS_PRODUCTION && isBackdoorUserAllowed(userId)) {
       console.warn(`[Payment Verify] Dev mode: Backdoor user ${userId} - skipping subscription lookup`);
     }
@@ -487,9 +486,42 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Check payment status with Cashfree
+    // Dodo order: no Cashfree API; success = webhook already set subscription + user active (or we run fallback below)
+    let isPaid = false;
+    let paymentStatus = 'PENDING';
+    let paymentData: any = {};
+    if (subscription?.dodo_order_id) {
+      isPaid = subscription.status === 'active';
+      paymentStatus = isPaid ? 'PAID' : 'PENDING';
+      if (isPaid && isValidUUID) {
+        const now = new Date();
+        let expiry = new Date();
+        if (subscription.plan_type === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
+        else expiry.setTime(expiry.getTime() + 24 * 60 * 60 * 1000);
+        await supabase.from('users').update({
+          premium_user: true,
+          subscription_plan: subscription.plan_type,
+          subscription_expiry: expiry.toISOString(),
+          updated_at: new Date().toISOString()
+        }).eq('id', subscription.user_id);
+        const { data: existingPayment } = await supabase.from('payments').select('id').eq('cashfree_order_id', orderId).maybeSingle();
+        if (!existingPayment) {
+          await supabase.from('payments').insert({
+            user_id: subscription.user_id,
+            subscription_id: subscription.id,
+            cashfree_order_id: orderId,
+            cashfree_payment_id: orderId,
+            amount: subscription.amount,
+            status: 'success',
+            plan_type: subscription.plan_type,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
+      }
+    } else {
+    // Legacy Cashfree: check payment status with gateway API
     const cashfreeBaseUrl = getCashfreeBaseUrl();
-
     const response = await fetch(`${cashfreeBaseUrl}/orders/${orderId}`, {
       method: 'GET',
       headers: {
@@ -498,9 +530,7 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
         'x-client-secret': process.env.CASHFREE_SECRET_KEY!,
       },
     });
-
-    const paymentData = await response.json();
-
+    paymentData = await response.json();
     if (!response.ok) {
       console.error('[Payment Verify] Cashfree error:', paymentData);
       return res.status(500).json({
@@ -508,29 +538,18 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
         details: paymentData
       });
     }
-
-    // Update subscription status
-    const paymentStatus = paymentData.order_status;
-    // Accept multiple statuses that indicate successful payment
-    const isPaid = paymentStatus === 'PAID' || paymentStatus === 'ACTIVE' || paymentStatus === 'SUCCESS';
-    
-    // Also check if subscription is already marked as active (webhook might have processed it)
+    paymentStatus = paymentData.order_status;
+    isPaid = paymentStatus === 'PAID' || paymentStatus === 'ACTIVE' || paymentStatus === 'SUCCESS';
     const isAlreadyActive = subscription?.status === 'active';
 
-    // Only update database if we have a valid subscription record (valid UUID user)
     if (subscription && isValidUUID) {
-    await supabase
-      .from('subscriptions')
-      .update({
+      await supabase.from('subscriptions').update({
         status: isPaid || isAlreadyActive ? 'active' : subscription.status,
         cashfree_payment_id: paymentData.cf_payment_id || paymentData.cf_order_id || subscription.cashfree_payment_id,
         updated_at: new Date().toISOString()
-      })
-      .eq('cashfree_order_id', orderId);
+      }).eq('cashfree_order_id', orderId);
     }
 
-    // Update user premium status if paid OR if subscription is already active
-    // Only for valid UUID users (skip for backdoor users)
     if ((isPaid || isAlreadyActive) && isValidUUID && subscription) {
       // Calculate expiry
       const now = new Date();
@@ -603,12 +622,12 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
         }
       }
 
-      // Log Event
       await logPaymentEvent(subscription.user_id, 'ENTITLEMENT_GRANTED', orderId, 200, { status: paymentData.order_status, expiry: expiry.toISOString() });
+    }
     }
 
     // Return success if payment is paid OR subscription is already active
-    const success = isPaid || isAlreadyActive;
+    const success = isPaid || (subscription?.status === 'active');
     
     // For backdoor users (dev only), return success if payment is paid (even without subscription record)
     // In production, all users must have valid UUIDs and subscriptions
@@ -619,8 +638,8 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
       status: paymentStatus,
       orderId,
       planType: subscription?.plan_type || planType,
-      startDate: subscription?.start_date,
-      endDate: subscription?.end_date,
+      startDate: subscription?.started_at,
+      endDate: subscription?.expires_at,
       message: finalSuccess ? 'Payment successful! You are now a premium user.' : 'Payment pending or failed'
     });
 
@@ -677,19 +696,20 @@ router.post('/api/payment/webhook', async (req: Request, res: Response) => {
 
     // Handle payment.succeeded event (per Dodo error guide)
     if (type === 'payment.succeeded') {
-      const paymentData = event.data;
-      const metadata = paymentData?.metadata;
+      const paymentData = event.data || data;
+      // Support multiple payload shapes: event.data.metadata, event.data.payment?.metadata
+      const metadata = paymentData?.metadata || paymentData?.payment?.metadata || {};
       
-      // CRITICAL: Extract user_id from metadata (source of truth per Dodo error guide)
       if (!metadata?.user_id) {
         console.error('[Dodo Webhook] ❌ Missing user_id in payment metadata');
         console.error('[Dodo Webhook] Metadata:', metadata);
+        console.error('[Dodo Webhook] paymentData keys:', paymentData ? Object.keys(paymentData) : []);
         return res.status(200).json({ received: true, error: 'Missing user_id in metadata' });
       }
 
-      const userId = metadata.user_id;
-      const planType = metadata.plan_type;
-      const amount = parseFloat(metadata.amount) || 0;
+      const userId = String(metadata.user_id);
+      const planType = metadata.plan_type || 'monthly';
+      const amount = parseFloat(String(metadata.amount || 0)) || 0;
       const checkoutSessionId = paymentData?.session_id || paymentData?.checkout_session_id;
 
       console.log(`[Dodo Webhook] 🔓 Unlocking premium access for user ${userId}`);
@@ -768,16 +788,18 @@ router.post('/api/payment/webhook', async (req: Request, res: Response) => {
           console.warn('[Dodo Webhook] ⚠️ Subscription update failed (non-blocking):', subError);
         }
 
-        // OPTIONAL: Record payment (non-blocking per Dodo error guide)
+        // Record payment in payments table (uses cashfree_* columns for gateway order id)
         try {
+          const dodoOrderId = metadata?.dodo_order_id || metadata?.order_id;
           await supabase.from('payments').insert({
             user_id: userId,
-            payment_id: paymentData.payment_id || checkoutSessionId,
-            provider: 'dodo',
-            status: 'PAID',
+            subscription_id: null,
+            cashfree_order_id: dodoOrderId || checkoutSessionId || '',
+            cashfree_payment_id: paymentData?.payment_id || paymentData?.id || checkoutSessionId || '',
             amount: amount,
+            status: 'success',
             plan_type: planType,
-            created_at: new Date().toISOString(),
+            created_at: new Date().toISOString()
           });
         } catch (paymentError) {
           console.warn('[Dodo Webhook] ⚠️ Payment record insert failed (non-blocking):', paymentError);

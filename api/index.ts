@@ -26,7 +26,13 @@ app.get("/api/health", (_req, res) => {
 
 // Middleware (after health checks)
 app.use(ensureSecretsLoaded);
-app.use(express.json());
+// Webhook needs raw body for signature verification; other routes use JSON
+app.use((req, res, next) => {
+    if (req.path === "/api/payment/webhook" && req.method === "POST") {
+        return express.raw({ type: "application/json", limit: "10mb" })(req, res, next);
+    }
+    return express.json()(req, res, next);
+});
 app.use(express.urlencoded({ extended: false }));
 
 // Debug Logging
@@ -92,6 +98,7 @@ app.use((req, res, next) => {
     const allowedOrigins = [
         "https://project1-kappa-tan.vercel.app",
         "https://project1-2q99.onrender.com",
+        "https://riya-ai.site",
         "http://localhost:5173",
         "http://localhost:3000"
     ];

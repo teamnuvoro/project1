@@ -68,7 +68,7 @@ function Router() {
   const [location] = useLocation();
 
   // Check if route needs top navbar layout
-  const navbarRoutes = ['/chat', '/call', '/analytics', '/settings', '/memories', '/history', '/payment/callback', '/admin/analytics', '/admin/analytics/journey'];
+  const navbarRoutes = ['/chat', '/call', '/analytics', '/settings', '/memories', '/history', '/payment/callback', '/payment/return', '/admin/analytics', '/admin/analytics/journey'];
   const needsNavbar = navbarRoutes.some(route => location.startsWith(route));
 
   const content = (
@@ -113,6 +113,9 @@ function Router() {
         {() => <ProtectedLayout><MemoriesPage /></ProtectedLayout>}
       </Route>
       <Route path="/payment/callback">
+        {() => <ProtectedLayout><PaymentCallback /></ProtectedLayout>}
+      </Route>
+      <Route path="/payment/return">
         {() => <ProtectedLayout><PaymentCallback /></ProtectedLayout>}
       </Route>
       <Route path="/history">

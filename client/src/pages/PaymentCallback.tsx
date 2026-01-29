@@ -136,10 +136,11 @@ export default function PaymentCallback() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
   const checkPaymentStatus = async (orderId: string): Promise<boolean> => {
     try {
-      // Use GET endpoint for lightweight status checks (polling)
-      const response = await fetch(`/api/payment/status/${orderId}`, {
+      const response = await fetch(`${API_BASE}/api/payment/status/${orderId}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
