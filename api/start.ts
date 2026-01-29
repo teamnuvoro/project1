@@ -1,8 +1,7 @@
+/**
+ * Vercel serverless entry: export the Express app so each /api/* request
+ * is passed to it. Do NOT call app.listen() — Vercel invokes this handler per request.
+ */
 import app from "./index";
 
-const port = process.env.PORT || 10000;
-
-app.listen(port, () => {
-    console.log(`Server listening on port ${port}`);
-    console.log(`Environment: ${process.env.NODE_ENV}`);
-});
+export default app;

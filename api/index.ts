@@ -13,6 +13,9 @@ import messagesHistoryRoutes from "../server/routes/messages-history";
 import analyticsEventsRoutes from "../server/routes/analytics-events";
 import adminRoutes from "../server/routes/admin";
 import feedbackRoutes from "../server/routes/feedback";
+import { requireFirebaseAuth } from "../server/middleware/requireFirebaseAuth";
+import { resolveFirebaseUser } from "../server/middleware/resolveFirebaseUser";
+import { DODO_ENABLED } from "../server/config";
 
 const app = express();
 
@@ -26,9 +29,9 @@ app.get("/api/health", (_req, res) => {
 
 // Middleware (after health checks)
 app.use(ensureSecretsLoaded);
-// Webhook needs raw body for signature verification; other routes use JSON
+// Webhook uses raw body only when Dodo enabled (signature verification); otherwise JSON
 app.use((req, res, next) => {
-    if (req.path === "/api/payment/webhook" && req.method === "POST") {
+    if (req.path === "/api/payment/webhook" && req.method === "POST" && DODO_ENABLED) {
         return express.raw({ type: "application/json", limit: "10mb" })(req, res, next);
     }
     return express.json()(req, res, next);
@@ -75,51 +78,62 @@ app.get("/api/health/detailed", (req, res) => {
     });
 });
 
-// Authentication: Verify Supabase JWT
-app.use(async (req, res, next) => {
-    // Skip for public routes
-    if (req.path === '/api/health' || req.path === '/api/debug') {
-        return next();
-    }
-
-    const authHeader = req.headers.authorization;
-    if (authHeader) {
-        // In a real implementation, you would verify the JWT here using supabase.auth.getUser(token)
-        // For now, we trust the client to send a valid token if they have one
-        // The actual RLS policies in Supabase will enforce security at the database level
-    }
-    next();
-});
-
-// CORS Middleware
-// CORS Middleware
+// CORS before auth so OPTIONS preflight gets 200 and CORS headers
 app.use((req, res, next) => {
-    // Allow requests from your Vercel frontend and Render backend
     const allowedOrigins = [
         "https://project1-kappa-tan.vercel.app",
+        "https://project1-bice-five.vercel.app",
         "https://project1-2q99.onrender.com",
         "https://riya-ai.site",
         "http://localhost:5173",
         "http://localhost:3000"
     ];
-
     const origin = req.headers.origin;
     if (origin && allowedOrigins.includes(origin)) {
         res.header("Access-Control-Allow-Origin", origin);
     } else {
-        // Fallback for development or direct API calls
         res.header("Access-Control-Allow-Origin", "*");
     }
-
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, x-webhook-signature, x-webhook-timestamp");
     res.header("Access-Control-Allow-Credentials", "true");
-
-    if (req.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
         return res.sendStatus(200);
     }
     next();
 });
+
+// Firebase Auth — required for /api/auth/session, /api/session, /api/user/usage
+app.use("/api", (req, res, next) => {
+    if (req.path === "/health" || req.path === "/health/detailed" || req.path === "/payment/webhook") {
+        return next();
+    }
+    return requireFirebaseAuth(req, res, next);
+});
+app.use("/api", (req, res, next) => {
+    if (req.path === "/health" || req.path === "/health/detailed" || req.path === "/payment/webhook") {
+        return next();
+    }
+    return resolveFirebaseUser(req, res, next);
+});
+
+// GET /api/auth/session — return current session (client expects this)
+app.get("/api/auth/session", (req, res) => {
+    try {
+        const session = (req as any).session as { userId?: string; firebaseUid?: string } | undefined;
+        if (!session?.userId) {
+            return res.status(401).json({ error: "Authentication required" });
+        }
+        res.json({ ok: true, userId: session.userId, firebaseUid: session.firebaseUid });
+    } catch (error) {
+        console.error("[/api/auth/session] Error:", error);
+        res.status(500).json({ error: "Failed to get session" });
+    }
+});
+
+if (!DODO_ENABLED || !process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
+    console.info("[Startup] Optional services disabled: Dodo Payments, Vonage OTP (set env vars to enable).");
+}
 
 app.use(authRoutes);
 app.use(supabaseApiRoutes);
