@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -91,6 +94,7 @@
     "twilio": "^5.10.6",
     "uuid": "^13.0.0",
     "vaul": "^1.1.2",
+    "vite": "^5.4.20",
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "zod": "^3.24.2",
@@ -122,8 +126,7 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.5",
-    "typescript": "5.6.3",
-    "vite": "^5.4.20"
+    "typescript": "5.6.3"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
