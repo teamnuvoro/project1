@@ -12,7 +12,7 @@
     "dev:server": "npm run kill:3000 && PORT=3000 NODE_ENV=development tsx server/index.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "start:all": "./start-all.sh",
-    "build": "vite build",
+    "build": "npx vite build",
     "build:server": "esbuild api/start.ts --bundle --platform=node --packages=external --format=cjs --outfile=dist/server.cjs",
     "start:server": "node dist/server.cjs",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
