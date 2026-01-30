@@ -48,9 +48,11 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-// In development, use relative URLs so Vite proxy works
-// In production, use VITE_API_URL if set
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// Production: relative URLs so requests hit same origin (e.g. /api/payment/verify)
+// Development: explicit backend so Vite dev server proxies to backend
+export const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "" : import.meta.env.DEV ? "http://localhost:3000" : "");
 
 export async function apiRequest(
   method: string,

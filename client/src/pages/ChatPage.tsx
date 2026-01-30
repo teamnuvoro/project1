@@ -8,7 +8,7 @@ import { PaywallSheet } from "@/components/paywall/PaywallSheet";
 import { AmplitudePasswordModal } from "@/components/AmplitudePasswordModal";
 import { ExitIntentModal } from "@/components/ExitIntentModal";
 import { useExitIntent } from "@/hooks/useExitIntent";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, API_BASE } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -657,8 +657,6 @@ export default function ChatPage() {
       setStreamingMessage("");
 
       try {
-        // Use same API base as rest of app: relative URL in dev (Vite proxy → backend), or VITE_API_URL in prod
-        const API_BASE = import.meta.env.VITE_API_URL || '';
         
         // Ensure we use the new persona ID format (map old types to new)
         const personaToSend = selectedPersonaId || mapPersonaToNewId(user?.persona) || 'sweet_supportive';

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, API_BASE } from "@/lib/queryClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { trackPaymentSuccessful, trackPaymentFailed } from "@/utils/amplitudeTracking";
 
@@ -22,8 +22,6 @@ export default function PaymentCallback() {
 
   const verifyPayment = async (orderId: string, attempt: number = 0): Promise<boolean> => {
     try {
-      // Use API_BASE to ensure requests go to backend (port 3000) not frontend (port 8080)
-      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
       const response = await fetch(`${API_BASE}/api/payment/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,8 +133,6 @@ export default function PaymentCallback() {
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   const checkPaymentStatus = async (orderId: string): Promise<boolean> => {
     try {
