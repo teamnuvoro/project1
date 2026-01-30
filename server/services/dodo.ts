@@ -3,9 +3,9 @@ import { supabase } from '../supabase';
 
 const require = createRequire(import.meta.url);
 
-/** Re-export so routes can short-circuit without importing SDK. */
+/** Re-export so routes can short-circuit without importing SDK. Trim to avoid invisible spaces (e.g. pasted in Render). */
 export const DODO_ENABLED =
-  !!process.env.DODO_PAYMENTS_API_KEY && !!process.env.DODO_WEBHOOK_SECRET;
+  !!(process.env.DODO_PAYMENTS_API_KEY?.trim()) && !!(process.env.DODO_WEBHOOK_SECRET?.trim());
 
 // Lazy import DodoPayments only when enabled (avoids "module not found" when SDK not installed)
 let DodoPaymentsClass: any = null;
@@ -17,8 +17,8 @@ if (DODO_ENABLED) {
     DodoPaymentsClass = dodoModule.default || dodoModule;
     if (DodoPaymentsClass) {
       dodo = new DodoPaymentsClass({
-        bearerToken: process.env.DODO_PAYMENTS_API_KEY || '',
-        environment: process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode',
+        bearerToken: (process.env.DODO_PAYMENTS_API_KEY || '').trim(),
+        environment: (process.env.DODO_ENV || '').trim() === 'live_mode' ? 'live_mode' : 'test_mode',
       });
     }
   } catch (error: any) {

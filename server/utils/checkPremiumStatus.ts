@@ -3,7 +3,7 @@ import { checkUserHasPayment, checkUserHasActiveSubscription } from './checkUser
 
 /** When false, payments are disabled and all users are treated as free. */
 const DODO_ENABLED =
-  !!process.env.DODO_PAYMENTS_API_KEY && !!process.env.DODO_WEBHOOK_SECRET;
+  !!(process.env.DODO_PAYMENTS_API_KEY?.trim()) && !!(process.env.DODO_WEBHOOK_SECRET?.trim());
 
 export interface PremiumStatusResult {
   isPremium: boolean;

@@ -69,7 +69,7 @@ export function getCashfreePlanConfig() {
 
 /** When false, Dodo SDK is not loaded and webhook returns 200 without verification. */
 export const DODO_ENABLED =
-  !!process.env.DODO_PAYMENTS_API_KEY && !!process.env.DODO_WEBHOOK_SECRET;
+  !!(process.env.DODO_PAYMENTS_API_KEY?.trim()) && !!(process.env.DODO_WEBHOOK_SECRET?.trim());
 
 export function getDodoPlanConfig() {
   return {
@@ -84,6 +84,6 @@ export function getDodoCredentials() {
   return {
     apiKey: (process.env.DODO_PAYMENTS_API_KEY ?? "").trim(),
     webhookSecret: (process.env.DODO_WEBHOOK_SECRET ?? "").trim(),
-    environment: process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode',
+    environment: (process.env.DODO_ENV || '').trim() === 'live_mode' ? 'live_mode' : 'test_mode',
   };
 }

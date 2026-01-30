@@ -312,8 +312,19 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
       console.log(`[Server] 🔄 Supabase API routes integrated`);
       console.log(`[Server] 🔄 Chat API routes integrated`);
       console.log(`[Server] 🎙️ Vapi.ai Chat Endpoint ready at /api/vapi/chat`);
-      if (!DODO_ENABLED || !process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
-        console.info('[Startup] Optional services disabled: Dodo Payments, Vonage OTP (set env vars to enable).');
+      // Dodo Payments: independent check — missing Vonage must not affect Dodo
+      if (DODO_ENABLED) {
+        console.info('[Startup] ✅ Dodo Payments initialized (DODO_PAYMENTS_API_KEY, DODO_WEBHOOK_SECRET).');
+      } else {
+        console.info('[Startup] ⚠️ Dodo Payments skipped — set DODO_PAYMENTS_API_KEY and DODO_WEBHOOK_SECRET to enable.');
+      }
+
+      // Vonage OTP: independent check — missing Vonage must not block Dodo
+      const vonageEnabled = !!(process.env.VONAGE_API_KEY?.trim()) && !!(process.env.VONAGE_API_SECRET?.trim());
+      if (vonageEnabled) {
+        console.info('[Startup] ✅ Vonage OTP initialized (VONAGE_API_KEY, VONAGE_API_SECRET).');
+      } else {
+        console.info('[Startup] ⚠️ Vonage OTP skipped — set VONAGE_API_KEY and VONAGE_API_SECRET to enable.');
       }
 
       // Initialize reminder scheduler

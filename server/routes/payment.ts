@@ -117,7 +117,7 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
     console.log('[Payment] Creating Dodo checkout session for userId:', userId, 'planType:', planType);
 
     // ✅ DODO PAYMENTS - Using official SDK
-    const dodoEnv = process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode';
+    const dodoEnv = (process.env.DODO_ENV || '').trim() === 'live_mode' ? 'live_mode' : 'test_mode';
     if (!IS_PRODUCTION || enablePaymentsInDev) {
       console.log("🧪 [Payment] Using Dodo test_mode");
     } else {
@@ -245,20 +245,27 @@ router.post('/api/payment/create-order', async (req: Request, res: Response) => 
     const ensureHttps = (url: string) => url.startsWith('https://');
     
     if (IS_PRODUCTION) {
-      returnUrlBase = process.env.BASE_URL || '';
+      // Prefer BASE_URL; on Render, fall back to RENDER_EXTERNAL_URL (set automatically)
+      const baseUrlEnv = process.env.BASE_URL || '';
+      const renderUrl = process.env.RENDER_EXTERNAL_URL || '';
+      returnUrlBase = baseUrlEnv && ensureHttps(baseUrlEnv) ? baseUrlEnv : (renderUrl && ensureHttps(renderUrl) ? renderUrl : '');
       webhookUrlFinal = process.env.DODO_WEBHOOK_URL || `${returnUrlBase}/api/payment/webhook`;
-      
+
       if (!returnUrlBase || !ensureHttps(returnUrlBase)) {
-        console.error('❌ PRODUCTION: BASE_URL must be set and HTTPS');
-        return res.status(500).json({ error: 'Server configuration error. Please contact support.' });
+        console.error('❌ PRODUCTION: BASE_URL (or RENDER_EXTERNAL_URL on Render) must be set and HTTPS. Current BASE_URL:', baseUrlEnv ? '(set)' : '(not set)', 'RENDER_EXTERNAL_URL:', renderUrl ? '(set)' : '(not set)');
+        return res.status(500).json({
+          error: 'Server configuration error. Please contact support.',
+          code: 'MISSING_BASE_URL',
+          hint: 'Set BASE_URL to your app\'s HTTPS URL (e.g. https://your-app.onrender.com) in your deployment environment.',
+        });
       }
-      
+
       if (returnUrlBase.includes('ngrok')) {
         console.error('❌ PRODUCTION: BASE_URL cannot be ngrok URL');
         return res.status(500).json({ error: 'Server configuration error. Please contact support.' });
       }
-      
-      console.log(`🌐 [Payment] Production mode - Using BASE_URL: ${returnUrlBase}`);
+
+      console.log(`🌐 [Payment] Production mode - Using base URL: ${returnUrlBase}`);
       console.log(`🌐 [Payment] Webhook URL: ${webhookUrlFinal}`);
     } else {
       // DEVELOPMENT

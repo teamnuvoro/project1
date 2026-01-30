@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
-import { queryClient, API_BASE } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { trackPaymentSuccessful, trackPaymentFailed } from "@/utils/amplitudeTracking";
 
@@ -22,12 +22,10 @@ export default function PaymentCallback() {
 
   const verifyPayment = async (orderId: string, attempt: number = 0): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE}/api/payment/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, userId: user?.id })
+      const response = await apiRequest('POST', '/api/payment/verify', {
+        orderId,
+        userId: user?.id,
       });
-
       const data = await response.json();
 
       if (data.success) {
@@ -136,11 +134,7 @@ export default function PaymentCallback() {
 
   const checkPaymentStatus = async (orderId: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE}/api/payment/status/${orderId}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
+      const response = await apiRequest('GET', `/api/payment/status/${orderId}`);
       const data = await response.json();
 
       if (data.success) {
