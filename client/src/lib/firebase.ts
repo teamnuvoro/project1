@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
-// Env vars override; fallback to project Web app config (riya-auth-5e0f6)
+// Web app config (riya-auth / riya-auth-5e0f6). Env vars VITE_FIREBASE_* override if set.
 const firebaseConfig = {
   apiKey:
     (import.meta.env.VITE_FIREBASE_API_KEY as string) ||

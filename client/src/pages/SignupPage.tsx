@@ -70,10 +70,12 @@ export default function SignupPage() {
         <p className="text-sm text-gray-600 mb-6">We’ll send a verification link to your email.</p>
 
         <form
+          action="#"
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
             onSubmit(e);
+            return false;
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "BUTTON") {

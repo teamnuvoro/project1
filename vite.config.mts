@@ -16,13 +16,13 @@ export default defineConfig({
     ...(process.env.NODE_ENV !== "production" &&
       process.env.REPL_ID !== undefined
       ? [
-        await import("@replit/vite-plugin-cartographer").then((m) =>
-          m.cartographer(),
-        ),
-        await import("@replit/vite-plugin-dev-banner").then((m) =>
-          m.devBanner(),
-        ),
-      ]
+          await import("@replit/vite-plugin-cartographer").then((m) =>
+            m.cartographer(),
+          ),
+          await import("@replit/vite-plugin-dev-banner").then((m) =>
+            m.devBanner(),
+          ),
+        ]
       : []),
   ],
   resolve: {
@@ -33,9 +33,7 @@ export default defineConfig({
     },
   },
   // Override root when used in middleware mode (server/vite.ts sets it)
-  // This allows Vite to resolve files correctly
   root: path.resolve(__dirname, "client"),
-  // Load .env from project root (parent directory)
   envDir: path.resolve(__dirname),
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
@@ -45,14 +43,14 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 3001,
-    strictPort: false, // Allow fallback to next available port if 3001 is in use
+    strictPort: false,
     fs: {
       strict: true,
       deny: [".env", ".env.*", "*.{crt,pem,key}"],
     },
     proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
+      "/api": {
+        target: "http://localhost:3000",
         changeOrigin: true,
         secure: false,
       },

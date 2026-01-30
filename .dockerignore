@@ -1,6 +1,6 @@
 node_modules
-dist
 .git
+dist
 .env
 .env.local
 .env.*.local
@@ -11,7 +11,5 @@ coverage
 .idea
 *.md
 !README.md
-attached_assets
 uploads
 test-*
-

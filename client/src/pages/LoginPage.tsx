@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, sendEmailVerification } from "firebase/auth";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -13,6 +13,30 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+
+  const onResendVerification = async () => {
+    if (!email.trim() || !password) {
+      toast({ title: "Enter your email and password above, then try again.", variant: "destructive" });
+      return;
+    }
+    setResending(true);
+    setError(null);
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await sendEmailVerification(userCred.user);
+      await signOut(auth);
+      toast({
+        title: "Verification email sent",
+        description: `Check your inbox (and spam folder) for ${email.trim()}. The link may take a few minutes to arrive.`,
+      });
+    } catch (e: any) {
+      toast({ title: "Could not resend", description: e?.message ?? "Try again.", variant: "destructive" });
+      setError(e?.message ?? "Could not resend");
+    } finally {
+      setResending(false);
+    }
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,10 +93,12 @@ export default function LoginPage() {
         <p className="text-sm text-gray-600 mb-6">Use your email and password.</p>
 
         <form
+          action="#"
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
             onSubmit(e);
+            return false;
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "BUTTON") {
@@ -115,7 +141,30 @@ export default function LoginPage() {
               onFocus={(e) => e.stopPropagation()}
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <div className="space-y-2">
+              <p className="text-sm text-red-600">{error}</p>
+              {error.includes("verify your email") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-[#9810fa] text-[#9810fa] hover:bg-[#9810fa]/10"
+                  disabled={resending || loading}
+                  onClick={onResendVerification}
+                >
+                  {resending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    "Resend verification email"
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
           <Button
             type="button"
             className="w-full bg-[#9810fa] hover:bg-purple-700"

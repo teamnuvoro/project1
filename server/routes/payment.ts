@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createDodoCheckoutSession, verifyDodoWebhook } from '../services/dodo';
+import { createDodoCheckoutSession, verifyDodoWebhook, DODO_ENABLED } from '../services/dodo';
 import { supabase, isSupabaseConfigured } from '../supabase';
 import { getDodoPlanConfig, getCashfreeBaseUrl } from '../config';
 import crypto from 'crypto';
@@ -56,7 +56,7 @@ router.get('/api/payment/config', async (_req: Request, res: Response) => {
   try {
     const config = getDodoPlanConfig();
     const enablePaymentsInDev = process.env.ENABLE_PAYMENTS_IN_DEV === 'true';
-    const paymentsEnabled = IS_PRODUCTION || enablePaymentsInDev;
+    const paymentsEnabled = DODO_ENABLED && (IS_PRODUCTION || enablePaymentsInDev);
     
     res.json({
       ...config,
@@ -64,7 +64,9 @@ router.get('/api/payment/config', async (_req: Request, res: Response) => {
       paymentProvider: 'dodo',
       paymentsDisabledReason: paymentsEnabled
         ? undefined
-        : 'Payments are disabled in development mode. Set ENABLE_PAYMENTS_IN_DEV=true to enable.',
+        : (DODO_ENABLED
+          ? 'Payments are disabled in development mode. Set ENABLE_PAYMENTS_IN_DEV=true to enable.'
+          : 'Payments are temporarily disabled. Set DODO_PAYMENTS_API_KEY and DODO_WEBHOOK_SECRET to enable.'),
     });
   } catch (error: any) {
     console.error('[Payment Config] Error:', error);
@@ -75,8 +77,14 @@ router.get('/api/payment/config', async (_req: Request, res: Response) => {
 // Create payment order
 router.post('/api/payment/create-order', async (req: Request, res: Response) => {
   try {
+    if (!DODO_ENABLED) {
+      console.warn('[Payment] Payments disabled — create-order ignored');
+      return res.status(503).json({
+        error: 'Payments are temporarily disabled',
+        message: 'Set DODO_PAYMENTS_API_KEY and DODO_WEBHOOK_SECRET to enable.',
+      });
+    }
     // 🚫 CLEAN DEV MODE: Disable payments in development (unless explicitly enabled)
-    // This prevents confusion from mixing dev auth with prod payments
     const enablePaymentsInDev = process.env.ENABLE_PAYMENTS_IN_DEV === 'true';
     if (!IS_PRODUCTION && !enablePaymentsInDev) {
       console.log('🚫 [Payment] Payments disabled in dev mode');
@@ -654,21 +662,25 @@ router.post('/api/payment/verify', async (req: Request, res: Response) => {
 
 // Cashfree webhook (for server-side notifications)
 // Dodo Payments webhook handler
-// CRITICAL: Must use express.raw() middleware (configured in server/index.ts)
+// When DODO_ENABLED is false: return 200 immediately (no body parsing, no signature verification)
+// TODO: Re-enable Dodo Payments — install dodopayments SDK, use express.raw() for webhook,
+//       enable signature verification, set DODO_* env vars
 router.post('/api/payment/webhook', async (req: Request, res: Response) => {
+  if (!DODO_ENABLED) {
+    console.warn('[Dodo Webhook] Payments disabled — ignoring webhook');
+    return res.status(200).send('ok');
+  }
+
   try {
     // CRITICAL: Get raw body for signature verification
     // req.body is a Buffer when using express.raw()
     let rawBody: string;
     
     if (Buffer.isBuffer(req.body)) {
-      // Raw body from express.raw() middleware
       rawBody = req.body.toString('utf8');
     } else if (typeof req.body === 'string') {
-      // Already a string
       rawBody = req.body;
     } else {
-      // Fallback: body was already parsed (shouldn't happen with correct middleware)
       rawBody = JSON.stringify(req.body);
       console.warn('[Dodo Webhook] ⚠️ Body was already parsed - signature verification may fail');
     }
@@ -803,6 +815,44 @@ router.post('/api/payment/webhook', async (req: Request, res: Response) => {
           });
         } catch (paymentError) {
           console.warn('[Dodo Webhook] ⚠️ Payment record insert failed (non-blocking):', paymentError);
+        }
+      }
+    } else if (type === 'subscription.active' || type === 'subscription.updated') {
+      // Fallback: upgrade from subscription event if metadata has user_id (same as checkout)
+      const subData = event.data || data;
+      const metadata = subData?.metadata || subData?.payment?.metadata || {};
+      const userId = metadata?.user_id ? String(metadata.user_id) : null;
+      if (userId && isSupabaseConfigured) {
+        const planType = metadata.plan_type || 'monthly';
+        let expiry = new Date();
+        if (planType === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
+        else expiry.setTime(expiry.getTime() + 24 * 60 * 60 * 1000);
+        const { error: upgradeError } = await supabase
+          .from('users')
+          .update({
+            premium_user: true,
+            subscription_plan: planType,
+            subscription_expiry: expiry.toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+        if (!upgradeError) {
+          console.log(`[Dodo Webhook] ✅ User ${userId} upgraded from ${type} (Plan: ${planType})`);
+        }
+        const dodoOrderId = metadata?.dodo_order_id || metadata?.order_id;
+        if (dodoOrderId) {
+          const { data: subRow } = await supabase
+            .from('subscriptions')
+            .select('id')
+            .eq('dodo_order_id', dodoOrderId)
+            .maybeSingle();
+          if (subRow) {
+            await supabase.from('subscriptions').update({
+              status: 'active',
+              expires_at: expiry.toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', subRow.id);
+          }
         }
       }
     } else {

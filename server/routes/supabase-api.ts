@@ -4,6 +4,7 @@ import { getPersona } from '../persona-engine/personaLoader';
 import { personaExists } from '../personas';
 import { checkPremiumStatus } from '../utils/checkPremiumStatus';
 import { IS_PRODUCTION, validateUserIdForProduction } from '../utils/productionChecks';
+import { DODO_ENABLED } from '../config';
 
 const router = Router();
 
@@ -238,6 +239,10 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
         console.error('[/api/user/usage] Supabase error:', error);
       }
 
+      if (!DODO_ENABLED) {
+        isPremium = false;
+        subscriptionPlan = undefined;
+      } else {
       // Check premium status from Dodo subscriptions (and users.premium_user set by Dodo webhook)
       const { data: subscriptions, error: subError } = await supabase
         .from('subscriptions')
@@ -271,6 +276,7 @@ router.get('/api/user/usage', async (req: Request, res: Response) => {
         isPremium = false;
         subscriptionPlan = undefined;
         console.log(`[User Usage] User ${userId} is free (no active Dodo subscription)`);
+      }
       }
     } catch (e) {
       console.log('[/api/user/usage] Using default stats:', e);

@@ -3,11 +3,14 @@ import { auth } from "@/lib/firebase";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    // Handle 401 Unauthorized - redirect to login
+    // Handle 401 Unauthorized - redirect to login only if not already on auth pages
+    // (avoids full-page reload loop when typing email/password on login or signup)
     if (res.status === 401) {
-      // Clear auth state and redirect to login
-      localStorage.removeItem("user");
-      window.location.href = "/login";
+      const path = typeof window !== "undefined" ? window.location.pathname : "";
+      if (path !== "/login" && path !== "/signup") {
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+      }
       throw new Error("Unauthorized");
     }
     // Try to parse error JSON
@@ -68,8 +71,15 @@ export async function apiRequest(
   const hasBody = data !== undefined && data !== null && !methodsWithoutBody.includes(method.toUpperCase());
   
   const headers: Record<string, string> = hasBody ? { "Content-Type": "application/json" } : {};
-  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    try {
+      const token = await currentUser.getIdToken();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    } catch (_) {
+      // Token fetch failed; request may get 401
+    }
+  }
   
   const res = await fetch(fullUrl, {
     method,
@@ -92,12 +102,17 @@ export const getQueryFn: <T>(options: {
       const fullUrl = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
       const headers: Record<string, string> = {};
-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        try {
+          const token = await currentUser.getIdToken();
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+        } catch (_) {}
+      }
 
       const res = await fetch(fullUrl, {
-        credentials: "include",
         headers,
+        credentials: "include",
       });
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {

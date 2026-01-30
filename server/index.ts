@@ -25,6 +25,7 @@ import bolnaRoutes from "./routes/bolna";
 import vapiTtsRoutes from "./routes/vapi-tts";
 import { initializeReminderScheduler } from "./jobs/reminder-scheduler";
 import { runProductionSafetyChecks } from "./utils/productionChecks";
+import { DODO_ENABLED } from "./config";
 
 const app = express();
 
@@ -91,14 +92,11 @@ app.use(ensureSecretsLoaded);
 // - /vapi/tts needs express.raw() to handle Vapi streams without parsing
 // This prevents "stream is not readable" errors
 
-// Apply express.json() ONLY to /api/* routes (except webhook which needs raw body)
-// IMPORTANT: Webhook route needs raw body for signature verification
+// Apply body parser: webhook uses raw only when Dodo enabled; otherwise JSON
 app.use('/api', (req, res, next) => {
-  // Skip JSON parsing for webhook route - it needs raw body
-  if (req.path === '/payment/webhook') {
+  if (req.path === '/payment/webhook' && req.method === 'POST' && DODO_ENABLED) {
     return express.raw({ type: 'application/json', limit: '10mb' })(req, res, next);
   }
-  // All other /api/* routes use JSON parsing
   return express.json()(req, res, next);
 });
 
@@ -125,22 +123,16 @@ app.use((req, res, next) => {
 // =========================================================
 import { requireFirebaseAuth } from "./middleware/requireFirebaseAuth";
 import { resolveFirebaseUser } from "./middleware/resolveFirebaseUser";
+// Skip Firebase auth for these paths (req.path is full path e.g. /api/analytics/event)
+const noAuthPaths = ["/api/health", "/api/health/detailed", "/api/payment/webhook", "/api/analytics/event"];
 app.use("/api", (req, res, next) => {
-  if (
-    req.path === "/health" ||
-    req.path === "/health/detailed" ||
-    req.path === "/payment/webhook"
-  ) {
+  if (noAuthPaths.includes(req.path)) {
     return next();
   }
   return requireFirebaseAuth(req, res, next);
 });
 app.use("/api", (req, res, next) => {
-  if (
-    req.path === "/health" ||
-    req.path === "/health/detailed" ||
-    req.path === "/payment/webhook"
-  ) {
+  if (noAuthPaths.includes(req.path)) {
     return next();
   }
   return resolveFirebaseUser(req, res, next);
@@ -320,6 +312,9 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
       console.log(`[Server] 🔄 Supabase API routes integrated`);
       console.log(`[Server] 🔄 Chat API routes integrated`);
       console.log(`[Server] 🎙️ Vapi.ai Chat Endpoint ready at /api/vapi/chat`);
+      if (!DODO_ENABLED || !process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
+        console.info('[Startup] Optional services disabled: Dodo Payments, Vonage OTP (set env vars to enable).');
+      }
 
       // Initialize reminder scheduler
       initializeReminderScheduler();

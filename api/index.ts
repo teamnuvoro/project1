@@ -104,17 +104,25 @@ app.use((req, res, next) => {
 });
 
 // Firebase Auth — required for /api/auth/session, /api/session, /api/user/usage
+// Skip auth for health, webhook, and analytics (req.path is full path e.g. /api/analytics/event)
+const noAuthPaths = ["/api/health", "/api/health/detailed", "/api/payment/webhook", "/api/analytics/event"];
 app.use("/api", (req, res, next) => {
-    if (req.path === "/health" || req.path === "/health/detailed" || req.path === "/payment/webhook") {
+    if (noAuthPaths.includes(req.path)) {
         return next();
     }
-    return requireFirebaseAuth(req, res, next);
+    return requireFirebaseAuth(req, res, next).catch((err: any) => {
+        console.error("[requireFirebaseAuth] Unhandled error:", err?.message ?? err);
+        if (!res.headersSent) res.status(503).json({ error: "Auth temporarily unavailable" });
+    });
 });
 app.use("/api", (req, res, next) => {
-    if (req.path === "/health" || req.path === "/health/detailed" || req.path === "/payment/webhook") {
+    if (noAuthPaths.includes(req.path)) {
         return next();
     }
-    return resolveFirebaseUser(req, res, next);
+    return resolveFirebaseUser(req, res, next).catch((err: any) => {
+        console.error("[resolveFirebaseUser] Unhandled error:", err?.message ?? err);
+        if (!res.headersSent) res.status(503).json({ error: "User resolution temporarily unavailable" });
+    });
 });
 
 // GET /api/auth/session — return current session (client expects this)
@@ -150,6 +158,14 @@ app.use(messagesHistoryRoutes);
 app.use(analyticsEventsRoutes);
 app.use(adminRoutes);
 
+// Global error handler — catch any next(err) from routes
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("[API] Unhandled error:", err?.message ?? err);
+    if (!res.headersSent) {
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 // Health check
 app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -173,6 +189,9 @@ app.patch("/api/user/personality", async (req, res) => {
 // =====================================================
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Try multiple possible build paths
 const possiblePaths = [

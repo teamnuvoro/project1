@@ -3,9 +3,12 @@ services:
     name: riya-ai-companion
     env: node
     plan: starter
+    # Use npm run build (not npx vite build); Node 20.x; vite in dependencies
     buildCommand: npm install && npm run build && npm run build:server
-    startCommand: NODE_ENV=production PORT=$PORT node dist/server.cjs
+    startCommand: NODE_ENV=production PORT=$PORT node dist/server.mjs
     envVars:
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: PORT

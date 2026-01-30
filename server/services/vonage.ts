@@ -1,27 +1,33 @@
 /**
  * Vonage Verify Service
  * 
- * Handles OTP sending and verification via Vonage Verify API
- * All secrets are server-side only - never exposed to client
+ * Handles OTP sending and verification via Vonage Verify API (when enabled).
+ * When VONAGE_ENABLED is false, SDK is not loaded and all OTP functions throw "OTP disabled".
  */
 
-// Lazy import Vonage to avoid build issues
+const VONAGE_ENABLED =
+  !!process.env.VONAGE_API_KEY && !!process.env.VONAGE_API_SECRET;
+
 let VonageClass: any = null;
 let vonage: any = null;
 
-try {
-  const vonageModule = require('@vonage/server-sdk');
-  VonageClass = vonageModule.Vonage || vonageModule.default?.Vonage || vonageModule.default;
-  
-  if (VonageClass) {
-    vonage = new VonageClass({
-      apiKey: process.env.VONAGE_API_KEY || '',
-      apiSecret: process.env.VONAGE_API_SECRET || '',
-    });
+if (VONAGE_ENABLED) {
+  try {
+    const vonageModule = require('@vonage/server-sdk');
+    VonageClass = vonageModule.Vonage || vonageModule.default?.Vonage || vonageModule.default;
+    if (VonageClass) {
+      vonage = new VonageClass({
+        apiKey: process.env.VONAGE_API_KEY || '',
+        apiSecret: process.env.VONAGE_API_SECRET || '',
+      });
+    }
+  } catch (error: any) {
+    console.warn('[Vonage] @vonage/server-sdk not available. OTP features will be disabled.');
+    vonage = null;
   }
-} catch (error) {
-  console.warn('[Vonage] @vonage/server-sdk not available. OTP features will be disabled.');
-  console.warn('[Vonage] Error:', error.message);
+} else {
+  // Do not require @vonage/server-sdk when disabled (avoids "module not found" in production)
+  console.warn('[Vonage] OTP disabled — SDK not loaded (set VONAGE_API_KEY and VONAGE_API_SECRET to enable).');
 }
 
 /**
@@ -56,12 +62,8 @@ export function normalizePhoneNumber(phone: string): string {
  * @returns request_id from Vonage (used for verification)
  */
 export async function sendOTP(phoneNumber: string): Promise<string> {
-  if (!vonage) {
-    throw new Error('Vonage SDK not available. Please install @vonage/server-sdk');
-  }
-  
-  if (!process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
-    throw new Error('Vonage API credentials not configured');
+  if (!VONAGE_ENABLED || !vonage) {
+    throw new Error('OTP disabled');
   }
 
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
@@ -108,12 +110,8 @@ export async function sendOTP(phoneNumber: string): Promise<string> {
  * @returns true if valid, false if invalid
  */
 export async function verifyOTP(requestId: string, code: string): Promise<boolean> {
-  if (!vonage) {
-    throw new Error('Vonage SDK not available. Please install @vonage/server-sdk');
-  }
-  
-  if (!process.env.VONAGE_API_KEY || !process.env.VONAGE_API_SECRET) {
-    throw new Error('Vonage API credentials not configured');
+  if (!VONAGE_ENABLED || !vonage) {
+    throw new Error('OTP disabled');
   }
 
   if (!/^\d{6}$/.test(code)) {
@@ -159,8 +157,7 @@ export async function verifyOTP(requestId: string, code: string): Promise<boolea
  * Useful if user requests a new OTP before verifying the old one
  */
 export async function cancelOTP(requestId: string): Promise<void> {
-  if (!vonage) {
-    console.warn('[Vonage] SDK not available, cannot cancel OTP');
+  if (!VONAGE_ENABLED || !vonage) {
     return;
   }
   

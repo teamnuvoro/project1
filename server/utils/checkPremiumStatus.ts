@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { checkUserHasPayment, checkUserHasActiveSubscription } from './checkUserHasPayment';
 
+/** When false, payments are disabled and all users are treated as free. */
+const DODO_ENABLED =
+  !!process.env.DODO_PAYMENTS_API_KEY && !!process.env.DODO_WEBHOOK_SECRET;
+
 export interface PremiumStatusResult {
   isPremium: boolean;
   source: 'user_flag' | 'subscription' | 'payment' | 'none';
@@ -18,6 +22,9 @@ export async function checkPremiumStatus(
   userId: string
 ): Promise<PremiumStatusResult> {
   try {
+    if (!DODO_ENABLED) {
+      return { isPremium: false, source: 'none' };
+    }
     // Validate UUID format before querying database
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(userId)) {

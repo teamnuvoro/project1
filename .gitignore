@@ -10,6 +10,7 @@ dist
 # Sensitive files with API keys
 client/.env.local
 server/firebase-service-account.json
+scripts/add-firebase-env.cjs
 *.env.bak
 update-cashfree-keys.sh
 

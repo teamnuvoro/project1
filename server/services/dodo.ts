@@ -3,23 +3,32 @@ import { supabase } from '../supabase';
 
 const require = createRequire(import.meta.url);
 
-// Lazy import DodoPayments to avoid build issues (ESM has no require)
+/** Re-export so routes can short-circuit without importing SDK. */
+export const DODO_ENABLED =
+  !!process.env.DODO_PAYMENTS_API_KEY && !!process.env.DODO_WEBHOOK_SECRET;
+
+// Lazy import DodoPayments only when enabled (avoids "module not found" when SDK not installed)
 let DodoPaymentsClass: any = null;
 let dodo: any = null;
 
-try {
-  const dodoModule = require('dodopayments');
-  DodoPaymentsClass = dodoModule.default || dodoModule;
-  
-  if (DodoPaymentsClass) {
-    dodo = new DodoPaymentsClass({
-      bearerToken: process.env.DODO_PAYMENTS_API_KEY || '',
-      environment: process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode',
-    });
+if (DODO_ENABLED) {
+  try {
+    const dodoModule = require('dodopayments');
+    DodoPaymentsClass = dodoModule.default || dodoModule;
+    if (DodoPaymentsClass) {
+      dodo = new DodoPaymentsClass({
+        bearerToken: process.env.DODO_PAYMENTS_API_KEY || '',
+        environment: process.env.DODO_ENV === 'live_mode' ? 'live_mode' : 'test_mode',
+      });
+    }
+  } catch (error: any) {
+    console.warn('[Dodo] dodopayments package not available. Payment features will be disabled.');
+    dodo = null;
   }
-} catch (error: any) {
-  console.warn('[Dodo] dodopayments package not available. Payment features will be disabled.');
-  console.warn('[Dodo] Error:', error.message);
+} else {
+  // TODO: Re-enable Dodo Payments — install dodopayments SDK, use express.raw() for webhook,
+  //       enable signature verification, set DODO_PAYMENTS_API_KEY and DODO_WEBHOOK_SECRET
+  console.warn('[Dodo] Payments disabled — SDK not loaded (set DODO_PAYMENTS_API_KEY and DODO_WEBHOOK_SECRET to enable).');
 }
 
 export interface CreateCheckoutSessionParams {

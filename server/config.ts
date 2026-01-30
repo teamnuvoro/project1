@@ -67,6 +67,10 @@ export function getCashfreePlanConfig() {
 // DODO PAYMENTS CONFIGURATION
 // =====================================================
 
+/** When false, Dodo SDK is not loaded and webhook returns 200 without verification. */
+export const DODO_ENABLED =
+  !!process.env.DODO_PAYMENTS_API_KEY && !!process.env.DODO_WEBHOOK_SECRET;
+
 export function getDodoPlanConfig() {
   return {
     currency: "INR",
